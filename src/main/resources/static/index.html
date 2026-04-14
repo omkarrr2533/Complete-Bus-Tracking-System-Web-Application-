@@ -117,9 +117,62 @@
             </button>
         </div>
 
-        <div class="map-container">
-            <div id="tracking-map" style="height:450px;"></div>
+        <div class="map-eta-wrapper">
+    <div class="map-container" style="margin-bottom:0;">
+        <div id="tracking-map" style="height:450px;"></div>
+    </div>
+ 
+    <!-- ETA Panel — floats over the map -->
+    <div id="eta-panel" class="eta-panel" role="status" aria-live="polite">
+ 
+        <!-- Top row: bus badge + route name + close -->
+        <div class="eta-top-row">
+            <span class="eta-bus-badge">
+                <!-- bus icon -->
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                    <rect x="1" y="2.5" width="11" height="7" rx="1.5" fill="currentColor"/>
+                    <rect x="2.5" y="9.5" width="2" height="1.5" rx="0.5" fill="currentColor"/>
+                    <rect x="8.5" y="9.5" width="2" height="1.5" rx="0.5" fill="currentColor"/>
+                    <rect x="3"   y="4"   width="3" height="2"   rx="0.5" fill="white" opacity="0.7"/>
+                    <rect x="7"   y="4"   width="3" height="2"   rx="0.5" fill="white" opacity="0.7"/>
+                </svg>
+                <span id="eta-bus-label">BUS-1</span>
+            </span>
+            <span id="eta-route-name" class="eta-route-txt">Loading…</span>
+            <button class="eta-close" onclick="hideETAPanel()" aria-label="Close ETA panel">
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                    <line x1="1.5" y1="1.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                    <line x1="9.5" y1="1.5" x2="1.5" y2="9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+            </button>
         </div>
+ 
+        <!-- Three-column stat strip -->
+        <div class="eta-stats-row">
+            <div class="eta-stat-cell">
+                <div class="eta-stat-num" id="eta-dist-value">--</div>
+                <div class="eta-stat-lbl">away</div>
+            </div>
+            <div class="eta-stat-sep"></div>
+            <div class="eta-stat-cell">
+                <div class="eta-stat-num eta-stat-big" id="eta-mins-value">--</div>
+                <div class="eta-stat-lbl">min ETA</div>
+            </div>
+            <div class="eta-stat-sep"></div>
+            <div class="eta-stat-cell">
+                <div class="eta-stat-num">20</div>
+                <div class="eta-stat-lbl">km/h avg</div>
+            </div>
+        </div>
+ 
+        <!-- Footer row: clock + status -->
+        <div class="eta-footer-row">
+            <span id="eta-clock"      class="eta-clock-txt"></span>
+            <span id="eta-status-msg" class="eta-status-txt"></span>
+        </div>
+ 
+    </div> 
+</div> 
 
         <h3>Available Buses</h3>
         <div class="bus-list" id="bus-list">
@@ -655,6 +708,6 @@
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="script.js"></script>
 <script src="chatbot.js"></script>
-<script src="animations.js"></script>
+<script src="eta.js"></script>
 </body>
 </html>

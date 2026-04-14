@@ -1728,3 +1728,178 @@ footer {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
 }
+
+/* ─── ETA Panel ─────────────────────────────────────────────────
+   Add this block to the BOTTOM of styles.css
+   ─────────────────────────────────────────────────────────────── */
+
+/* Wrapper that lets the panel float over the map */
+.map-eta-wrapper {
+    position: relative;
+    margin-bottom: 2rem;
+}
+
+/* The floating panel itself */
+.eta-panel {
+    display: none;               /* shown via JS  */
+    flex-direction: column;
+    gap: 0.5rem;
+    position: absolute;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 900;
+    background: var(--bg-card);
+    border: 1.5px solid #f59e0b;
+    border-radius: var(--radius);
+    padding: 0.875rem 1.1rem;
+    box-shadow: 0 6px 28px rgba(245,158,11,0.18), var(--shadow-lg);
+    min-width: 310px;
+    max-width: calc(100% - 32px);
+    pointer-events: all;
+    animation: etaSlideUp 0.22s ease-out;
+}
+
+@keyframes etaSlideUp {
+    from { transform: translateX(-50%) translateY(10px); opacity: 0; }
+    to   { transform: translateX(-50%) translateY(0);   opacity: 1; }
+}
+
+/* Top row: badge + route name + close button */
+.eta-top-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.eta-bus-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #fef3c7;
+    color: #92400e;
+    border-radius: 100px;
+    padding: 0.2rem 0.65rem;
+    font-size: 0.73rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+[data-theme="dark"] .eta-bus-badge {
+    background: #78350f;
+    color: #fde68a;
+}
+
+.eta-route-txt {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.eta-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.2rem;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+.eta-close:hover {
+    color: var(--text);
+    background: var(--bg-hover);
+}
+
+/* Three-column stats row */
+.eta-stats-row {
+    display: flex;
+    align-items: center;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+.eta-stat-cell {
+    flex: 1;
+    text-align: center;
+    padding: 0.625rem 0.5rem;
+}
+
+.eta-stat-sep {
+    width: 1px;
+    height: 36px;
+    background: var(--border);
+    flex-shrink: 0;
+}
+
+.eta-stat-num {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+}
+
+/* The big ETA minutes number */
+.eta-stat-big {
+    font-size: 1.875rem;
+    color: #d97706;
+}
+[data-theme="dark"] .eta-stat-big {
+    color: #fbbf24;
+}
+
+.eta-stat-lbl {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    margin-top: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Footer: arrival clock + status message */
+.eta-footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 1.1rem;
+    margin-top: 0.125rem;
+}
+
+.eta-clock-txt {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.eta-status-txt {
+    font-size: 0.73rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Amber legend dot on the bus card when ETA is active */
+.bus-card.eta-active {
+    border-color: #f59e0b;
+    background: #fffbeb;
+}
+[data-theme="dark"] .bus-card.eta-active {
+    background: #451a03;
+}
+
+/* Responsive: narrow screens */
+@media (max-width: 400px) {
+    .eta-panel {
+        bottom: 10px;
+        min-width: unset;
+        width: calc(100% - 24px);
+    }
+}

@@ -358,6 +358,7 @@ function selectBusRoute(routeId) {
         card.classList.toggle('selected', card.getAttribute('data-route-id') === routeId);
     });
     selectedBusRoute = routeId;
+    if (typeof triggerETA === 'function') triggerETA(busId, routeId);
 }
 
 function showRoute(routeId) {
@@ -448,6 +449,7 @@ function updateSingleBusLocation(data) {
         const id = data.busId;
         if (busMarkers[id]) busMarkers[id].setLatLng(data.coords);
         else updateBusLocations([data]);
+        if (typeof refreshETAIfActive === 'function') refreshETAIfActive(id, data.coords);
     }
 }
 
