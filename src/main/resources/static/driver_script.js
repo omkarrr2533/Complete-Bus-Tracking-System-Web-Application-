@@ -9,29 +9,6 @@ let currentUser = null;
 let watchId = null;
 let showOtherDrivers = false;
 
-// Initialize particles background
-function initParticles() {
-    const particlesContainer = document.getElementById('particles');
-    if (!particlesContainer) return;
-
-    const particleCount = 30;
-
-    for (let i = 0; i < particleCount; i++) {
-        const particle = document.createElement('div');
-        particle.classList.add('particle');
-
-        const size = Math.random() * 4 + 2;
-        particle.style.width = `${size}px`;
-        particle.style.height = `${size}px`;
-        particle.style.left = `${Math.random() * 100}%`;
-        particle.style.top = `${Math.random() * 100}%`;
-        particle.style.animationDelay = `${Math.random() * 15}s`;
-        particle.style.animationDuration = `${15 + Math.random() * 10}s`;
-
-        particlesContainer.appendChild(particle);
-    }
-}
-
 // Handle login form submission with proper authentication
 function setupLogin() {
     const loginForm = document.getElementById('driver-login-form');
@@ -782,7 +759,6 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Initializing Driver Dashboard...');
 
     // Initialize components
-    initParticles();
     setupLogin();
     setupLogout();
 
