@@ -402,10 +402,9 @@ function loadBusRoutes() {
         "2": {
             name: "Fame Tapadia Signal",
             path: [
-                [19.883575, 75.365027],
-                [19.894559, 75.365062],
+                [19.876796, 75.366045],
+                [19.883883, 75.365047],
                 [19.895284, 75.364767],
-                [19.898180, 75.362212],
                 [19.904718, 75.357021],
                 [19.909854, 75.353163],
                 [19.914915, 75.352384],
@@ -414,18 +413,101 @@ function loadBusRoutes() {
                 [19.894397, 75.337078],
                 [19.892250, 75.327619],
                 [19.884206, 75.317144],
+                [19.861054, 75.310145],
                 [19.832545, 75.290382]
             ],
             color: '#4ecdc4',
             stops: [
-                { name: "Fame Tapadia Signal", coords: [19.876796, 75.366045] },
-                { name: "N1 Ganpati", coords: [19.883883, 75.365047] },
-                { name: "Wokhardt", coords: [19.895284, 75.364767] },
-                { name: "Ambedkar Chowk", coords: [19.898180, 75.362212] },
-                { name: "Railway Station", coords: [19.861054, 75.310145] },
-                { name: "CSMSS", coords: [19.832545, 75.290382] }
-            ]
-        }
+                        { name: 'Fame Tapadia Signal', coords: [19.876796, 75.366045] },
+                        { name: 'N1 Ganpati ', coords: [19.883883, 75.365047] },
+                        { name: ' Wokhardt ', coords: [19.895284, 75.364767] },
+                        { name: 'Ambedkar Chowk', coords: [19.898180, 75.362212] },
+                        { name: 'Jaiswal Hall ', coords: [19.904718, 75.357021] },
+                        { name: ' SBOA ', coords: [19.909854, 75.353163] },
+                        { name: ' T. Point ', coords: [19.914915, 75.352384] },
+                        { name: 'Power House ', coords: [19.906784, 75.343839] },
+                        { name: 'Hudco Corner ', coords: [19.904839, 75.342060] },
+                        { name: 'Collector Office ', coords: [19.894397, 75.337078] },
+                        { name: 'Jubilee Park ', coords: [19.892250, 75.327619] },
+                        { name: ' Mill Corner ', coords: [19.884206, 75.317144] },
+                        { name: 'bharat petroleum ', coords: [19.884206, 75.317144] },
+                        { name: 'Railway Station', coords: [19.861054, 75.310145] },
+                        { name: 'Paithan RD', coords: [19.861054, 75.310145] },
+                        { name: 'Csmss', coords: [19.832545, 75.290382] },
+                    ]
+        },
+
+        "3": {
+                    name: "Chikalthana",
+                    path: [
+                        [19.873573, 75.394782],
+                        [19.869982, 75.394397],
+                        [19.871974, 75.385324],
+                        [19.873522, 75.370390],
+                        [19.874840, 75.355761],
+                        [19.875275, 75.352356],
+                        [19.876049, 75.341475],
+                        [19.873642, 75.328705],
+                        [19.872266, 75.322000],
+                        [19.860902, 75.310143],
+                        [19.861369, 75.306988],
+                        [19.847678, 75.296336],
+                        [19.833201, 75.290463]
+                    ],
+                    color: '#ff6b6b',
+                    stops: [
+                                { name: 'Chikalthana', coords: [19.873573, 75.394782] },
+                                { name: ' Dhoot Hospita', coords: [19.869982, 75.394397] },
+                                { name: ' Ram Nagar', coords: [19.871974, 75.385324] },
+                                { name: 'API Corner', coords: [19.873522, 75.370390] },
+                                { name: 'Ramgiri Hotel', coords: [19.874840, 75.355761] },
+                                { name: ' Seven Hills', coords: [19.875275, 75.352356] },
+                                { name: 'Akashwani', coords: [19.876049, 75.341475] },
+                                { name: 'Mondha Naka', coords: [19.873642, 75.328705] },
+                                { name: ' Amarpreet', coords: [19.872266, 75.322000] },
+                                { name: 'Kranti Chowk', coords: [19.872266, 75.322000] },
+                                { name: ' Gopal T', coords: [19.860902, 75.310143] },
+                                { name: ' Jai Tower', coords: [19.861369, 75.306988] },
+                                { name: ' Padampura', coords: [19.847678, 75.296336] },
+                                { name: ' csmss', coords: [19.833201, 75.290463] },
+                            ]
+                },
+
+                "4": {
+                                    name: "Baliram Patil High School",
+                                    path: [
+                                        [19.895877, 75.358173],
+                                        [19.888110, 75.360340],
+                                        [19.879980, 75.360448],
+                                        [19.883450420753835, 75.35381853503729],
+                                        [19.875295, 75.353286],
+                                        [19.869060, 75.350870],
+                                        [19.858987, 75.344975],
+                                        [19.857757, 75.334539],
+                                        [19.850451, 75.333036],
+                                        [19.854130, 75.305745],
+                                        [19.854687, 75.302286],
+                                        [19.841854, 75.293056],
+                                        [19.832519, 75.290360]
+                                    ],
+                                    color: '#ff6b6b',
+                                    stops: [
+                                                { name: ' Baliram Patil High School', coords: [19.895877, 75.358173] },
+                                                { name: ' Bajrang Chowk RD', coords: [19.888110, 75.360340] },
+                                                { name: ' Chistiya Chowk RD', coords: [19.879980, 75.360448] },
+                                                { name: ' Central Naka RD', coords: [19.883450420753835, 75.35381853503729] },
+                                                { name: ' Seven Hills Signal', coords: [19.875295, 75.353286] },
+                                                { name: ' Gajanan Mandir', coords: [19.869060, 75.350870] },
+                                                { name: ' Reliance Mall', coords: [19.865591, 75.349258] },
+                                                { name: ' suthgirni showk RD', coords: [19.858987, 75.344975] },
+                                                { name: ' Shivaji Nagar RD', coords: [19.857757, 75.334539] },
+                                                { name: ' Darga RD', coords: [19.850451, 75.333036] },
+                                                { name: ' Dhule- Solapur Hwy', coords: [19.854130, 75.305745] },
+                                                { name: ' Dhule- Solapur Hwy Corner', coords: [19.854687, 75.302286] },
+                                                { name: ' Jai Shriram Square', coords: [19.841854, 75.293056] },
+                                                { name: ' CSMSS', coords: [19.832519, 75.290360] }
+                                            ]
+                                },
     };
 
     // Store routes but don't display initially
@@ -441,10 +523,10 @@ function generateBusList() {
     // Default buses (will be updated with real data from WebSocket)
     const defaultBuses = [
         { id: 'bus-1', route: 'Route 1: Ranjangaon Phata', routeId: '1', status: 'Active', nextStop: 'Alphonsa' },
-        { id: 'bus-2', route: 'Route 1: Ranjangaon Phata', routeId: '1', status: 'Active', nextStop: 'MIDC RD' },
-        { id: 'bus-3', route: 'Route 2: Fame Tapadia Signal', routeId: '2', status: 'Active', nextStop: 'Wokhardt' },
-        { id: 'bus-4', route: 'Route 2: Fame Tapadia Signal', routeId: '2', status: 'Active', nextStop: 'Railway Station' },
-        { id: 'bus-5', route: 'Route 1: Ranjangaon Phata', routeId: '1', status: 'Active', nextStop: 'Pratap Chowk' }
+        { id: 'bus-2', route: 'Route 1: Fame Tapadia Signal', routeId: '1', status: 'Active', nextStop: 'MIDC RD' },
+        { id: 'bus-3', route: 'Route 2: Chikalthana', routeId: '2', status: 'Active', nextStop: 'Wokhardt' },
+        { id: 'bus-4', route: 'Route 2: Mahalaxmi Chowk', routeId: '2', status: 'Active', nextStop: 'Railway Station' },
+        { id: 'bus-5', route: 'Route 1: Baliram Patil High School', routeId: '1', status: 'Active', nextStop: 'Pratap Chowk' }
     ];
 
     busList.innerHTML = '';
@@ -1019,7 +1101,42 @@ document.addEventListener('click', (e) => {
         }
     }
 });
+// Add to your existing script.js
+function integrateChatbot() {
+    // Make chatbot functions available globally
+    window.openBusChatbot = function(busNumber) {
+        if (window.citybusChatbot) {
+            window.citybusChatbot.openChatbot();
+            setTimeout(() => {
+                window.askChatbot(`Where is bus ${busNumber}?`);
+            }, 300);
+        }
+    };
 
+    // Add chatbot help to navigation
+    const helpLink = document.createElement('a');
+    helpLink.href = '#';
+    helpLink.className = 'nav-item nav-link';
+    helpLink.innerHTML = '<i class="nav-icon fas fa-robot"></i><span class="nav-text">AI Assistant</span>';
+    helpLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (window.citybusChatbot) {
+            window.citybusChatbot.openChatbot();
+        }
+    });
+
+    // Add to navigation menu
+    const navMenu = document.querySelector('.nav-menu');
+    if (navMenu) {
+        navMenu.appendChild(helpLink);
+    }
+}
+
+// Call this function in your DOMContentLoaded event
+document.addEventListener('DOMContentLoaded', () => {
+    // ... your existing code ...
+    integrateChatbot();
+});
 // Handle page resize
 window.addEventListener('resize', () => {
     if (trackingMap) {

@@ -137,6 +137,9 @@
                 <option value="all">All Routes</option>
                 <option value="1">Route 1: Ranjangaon Phata</option>
                 <option value="2">Route 2: Fame Tapadia Signal</option>
+                <option value="2">Route 2: Chikalthana</option>
+                <option value="2">Route 2: Mahalaxmi Chowk</option>
+                <option value="2">Route 2: Baliram Patil High School</option>
             </select>
         </div>
 
@@ -169,6 +172,28 @@
                     <td>5:30 AM</td>
                     <td>10:30 PM</td>
                 </tr>
+                <tr>
+                    <td>3</td>
+                    <td>Chikalthana</td>
+                    <td>16</td>
+                    <td>20 mins</td>
+                    <td>5:30 AM</td>
+                    <td>10:30 PM</td>
+                </tr><tr>
+                    <td>4</td>
+                    <td>Mahalaxmi Chowk</td>
+                    <td>16</td>
+                    <td>20 mins</td>
+                    <td>5:30 AM</td>
+                    <td>10:30 PM</td>
+                </tr><tr>
+                    <td>5</td>
+                    <td>Baliram Patil High School</td>
+                    <td>16</td>
+                    <td>20 mins</td>
+                    <td>5:30 AM</td>
+                    <td>10:30 PM</td>
+                </tr>a
                 </tbody>
             </table>
         </div>
@@ -282,6 +307,53 @@
 
             <div class="schedule-card" data-route="3">
                 <div class="schedule-header">
+                    <h3>Route 3: Chikalthana</h3>
+                    <div class="schedule-time">5:30 AM - 10:30 PM</div>
+                </div>
+                <div class="schedule-content">
+                    <ul class="schedule-stops">
+                        <li>
+                            <span class="stop-name">Chikalthana</span>
+                            <span class="stop-time">5:30 AM</span>
+                        </li>
+                        <li>
+                            <span class="stop-name">Dhoot Hospital- Ram Nagar</span>
+                            <span class="stop-time">5:45 AM</span>
+                        </li>
+                        <li>
+                            <span class="stop-name">Akashwani</span>
+                            <span class="stop-time">6:00 AM</span>
+                        </li>
+                        <li>
+                            <span class="stop-name">Jai Tower</span>
+                            <span class="stop-time">6:15 AM</span>
+                        </li>
+                        <li>
+                            <span class="stop-name">Padampura</span>
+                            <span class="stop-time">6:30 AM</span>
+                        </li>
+                    </ul>
+                    <div class="route-stats">
+                        <div class="stat-item">
+                            <div class="stat-value">11</div>
+                            <div class="stat-label">Total Stops</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">20</div>
+                            <div class="stat-label">Minutes</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">30</div>
+                            <div class="stat-label">Buses/Day</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <div class="schedule-card" data-route="5">
+                <div class="schedule-header">
                     <h3>Route 3: City Center Loop</h3>
                     <div class="schedule-time">6:30 AM - 9:30 PM</div>
                 </div>
@@ -326,6 +398,64 @@
             </div>
         </div>
     </section>
+
+    <!-- Chatbot Widget -->
+    <div id="chatbot-widget" class="chatbot-widget">
+        <!-- Chatbot Toggle Button -->
+        <button id="chatbot-toggle" class="chatbot-toggle" aria-label="Open Chatbot">
+            <i class="fas fa-robot"></i>
+            <span class="notification-dot"></span>
+        </button>
+
+        <!-- Chatbot Container -->
+        <div id="chatbot-container" class="chatbot-container">
+            <!-- Chatbot Header -->
+            <div class="chatbot-header">
+                <div class="chatbot-avatar">
+                    <i class="fas fa-bus"></i>
+                </div>
+                <div class="chatbot-info">
+                    <h3>CityBus Assistant</h3>
+                    <span class="status">Online • Ready to help</span>
+                </div>
+                <button id="chatbot-close" class="chatbot-close" aria-label="Close Chatbot">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Chat Messages Area -->
+            <div id="chatbot-messages" class="chatbot-messages">
+                <!-- Welcome message will be added here -->
+            </div>
+
+            <!-- Quick Action Buttons -->
+            <div id="quick-actions" class="quick-actions">
+                <button class="quick-btn" data-action="track-bus">
+                    <i class="fas fa-map-marker-alt"></i> Track Bus
+                </button>
+                <button class="quick-btn" data-action="find-route">
+                    <i class="fas fa-route"></i> Find Route
+                </button>
+                <button class="quick-btn" data-action="schedule">
+                    <i class="fas fa-clock"></i> Check Schedule
+                </button>
+            </div>
+
+            <!-- Chat Input Area -->
+            <div class="chatbot-input-container">
+                <div class="input-wrapper">
+                    <input type="text" id="chatbot-input" placeholder="Ask about bus routes, schedules, or tracking..."
+                           aria-label="Type your message">
+                    <button id="chatbot-send" class="send-btn" aria-label="Send message">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="suggestions">
+                    <span class="suggestion-text">Try: "Where is bus 1?" or "Route to railway station"</span>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Enhanced Contact Page -->
     <section id="contact" class="page">
@@ -516,13 +646,14 @@
             </div>
         </div>
         <div class="copyright">
-            <p>&copy; 2024 CityBus Tracker. All rights reserved.</p>
+            <p>&copy; 2025 CityBus Tracker. All rights reserved.</p>
         </div>
     </div>
 </footer>
 
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="script.js"></script>
+<script src="chatbot.js"></script>
 <script src="animations.js"></script>
 </body>
 </html>
