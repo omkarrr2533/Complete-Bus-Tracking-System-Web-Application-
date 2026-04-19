@@ -36,8 +36,7 @@ public class BusTrackingWebSocketHandler implements WebSocketHandler {
         sessions.put(session.getId(), session);
         System.out.println("WebSocket connection established: " + session.getId());
 
-        // Send welcome message
-        sendMessage(session, "connection-established", Map.of(
+         sendMessage(session, "connection-established", Map.of(
                 "sessionId", session.getId(),
                 "timestamp", System.currentTimeMillis()
         ));
@@ -115,8 +114,7 @@ public class BusTrackingWebSocketHandler implements WebSocketHandler {
                     "status", "success"
             ));
 
-            // Broadcast to all users that a new driver is available
-            broadcastToUsers("new-driver-available", Map.of(
+             broadcastToUsers("new-driver-available", Map.of(
                     "driverId", driverId,
                     "busId", busId,
                     "timestamp", System.currentTimeMillis()
@@ -160,8 +158,7 @@ public class BusTrackingWebSocketHandler implements WebSocketHandler {
                             "timestamp", System.currentTimeMillis()
                     ));
 
-                    // Broadcast to all users and other drivers
-                    broadcastLocationUpdate(driverInfo);
+                     broadcastLocationUpdate(driverInfo);
                 }
             }
         }
