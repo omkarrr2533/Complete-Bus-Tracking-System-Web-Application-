@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CityBus Tracker — Admin Console</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="admin-body">
+
+<!-- Dark Mode Toggle -->
+<button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
+    <i class="fas fa-moon" id="theme-icon"></i>
+</button>
+
+<!-- ═══ Login screen ═══ -->
+<div class="auth-screen" id="auth-screen">
+    <div class="auth-card">
+        <div class="auth-logo"><i class="fas fa-bus"></i></div>
+        <h1>Admin Console</h1>
+        <p class="sub">Sign in to manage routes, fleet and live operations</p>
+        <div class="auth-error" id="auth-error"></div>
+        <form id="admin-login-form">
+            <div class="field" style="margin-bottom: 0.9rem;">
+                <label for="admin-username"><i class="fas fa-user"></i> Username</label>
+                <input type="text" id="admin-username" autocomplete="username" placeholder="admin" required>
+            </div>
+            <div class="field" style="margin-bottom: 1.4rem;">
+                <label for="admin-password"><i class="fas fa-lock"></i> Password</label>
+                <input type="password" id="admin-password" autocomplete="current-password" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn" style="width: 100%; justify-content: center;" id="admin-login-btn">
+                <i class="fas fa-sign-in-alt"></i> Sign In
+            </button>
+        </form>
+        <p class="sub" style="margin: 1.25rem 0 0;">
+            <a href="/" style="color: var(--primary); text-decoration: none;">
+                <i class="fas fa-arrow-left"></i> Back to rider site
+            </a>
+        </p>
+    </div>
+</div>
+
+<!-- ═══ Admin shell ═══ -->
+<div id="admin-shell" style="display: none; width: 100%;">
+
+    <aside class="admin-sidebar" id="admin-sidebar">
+        <div class="brand"><i class="fas fa-bus"></i> CityBus Admin</div>
+        <nav class="admin-nav">
+            <a href="#" class="nav-item active" data-section="dashboard">
+                <i class="nav-icon fas fa-gauge-high"></i><span>Dashboard</span>
+            </a>
+            <a href="#" class="nav-item" data-section="routes">
+                <i class="nav-icon fas fa-route"></i><span>Routes</span>
+            </a>
+            <a href="#" class="nav-item" data-section="fleet">
+                <i class="nav-icon fas fa-bus-simple"></i><span>Fleet</span>
+            </a>
+            <a href="/swagger-ui.html" target="_blank" rel="noopener" class="nav-item">
+                <i class="nav-icon fas fa-book"></i><span>API Docs</span>
+            </a>
+            <a href="/" class="nav-item">
+                <i class="nav-icon fas fa-map"></i><span>Rider Site</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <div class="admin-user">
+                <i class="fas fa-circle-user"></i>
+                <div>
+                    <span class="name" id="admin-display-name">Administrator</span>
+                    <span id="admin-role-label">ADMIN</span>
+                </div>
+            </div>
+            <button class="btn btn-secondary btn-small" id="admin-logout" style="justify-content: center;">
+                <i class="fas fa-sign-out-alt"></i> Sign out
+            </button>
+        </div>
+    </aside>
+
+    <main class="admin-main">
+        <div class="admin-topbar">
+            <div style="display: flex; align-items: center;">
+                <button class="btn-icon admin-menu-toggle" id="admin-menu-toggle" aria-label="Toggle menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div>
+                    <h1 id="section-title">Dashboard</h1>
+                    <div class="subtitle" id="section-subtitle">Fleet overview and live operations</div>
+                </div>
+            </div>
+            <button class="btn btn-secondary btn-small" id="refresh-all">
+                <i class="fas fa-rotate"></i> Refresh
+            </button>
+        </div>
+
+        <!-- ═══ Dashboard section ═══ -->
+        <section id="section-dashboard" class="admin-section">
+            <div class="stat-grid" id="stat-grid">
+                <div class="stat-card">
+                    <div class="icon"><i class="fas fa-route"></i></div>
+                    <div><div class="value" id="stat-routes">–</div><div class="label">Routes</div></div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon"><i class="fas fa-bus-simple"></i></div>
+                    <div><div class="value" id="stat-buses">–</div><div class="label">Fleet size</div></div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon" style="background: rgba(22,163,74,0.12); color: var(--success);">
+                        <i class="fas fa-tower-broadcast"></i>
+                    </div>
+                    <div><div class="value" id="stat-live">–</div><div class="label">Broadcasting now</div></div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon" style="background: rgba(217,119,6,0.12); color: var(--warning);">
+                        <i class="fas fa-location-dot"></i>
+                    </div>
+                    <div><div class="value" id="stat-stops">–</div><div class="label">Stops in network</div></div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-tower-broadcast"></i> Live buses</h2>
+                    <span class="badge badge-muted" id="live-updated">auto-refreshes every 10s</span>
+                </div>
+                <div class="panel-body flush">
+                    <table class="data-table">
+                        <thead>
+                        <tr>
+                            <th>Bus</th>
+                            <th>Driver</th>
+                            <th>Position</th>
+                            <th>Speed</th>
+                            <th>Last seen</th>
+                            <th>Status</th>
+                        </tr>
+                        </thead>
+                        <tbody id="live-table-body"></tbody>
+                    </table>
+                    <div class="empty-state" id="live-empty" style="display: none; border: none;">
+                        <i class="fas fa-satellite-dish"></i>
+                        <p>No buses are broadcasting right now. Log in on the <a href="/driver">driver dashboard</a> to go live.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ Routes section ═══ -->
+        <section id="section-routes" class="admin-section" style="display: none;">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-route"></i> Route network</h2>
+                    <button class="btn btn-small" id="add-route-btn">
+                        <i class="fas fa-plus"></i> New Route
+                    </button>
+                </div>
+                <div class="panel-body flush">
+                    <table class="data-table">
+                        <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Stops</th>
+                            <th>Service hours</th>
+                            <th>Frequency</th>
+                            <th>Buses</th>
+                            <th>Status</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="routes-admin-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ Fleet section ═══ -->
+        <section id="section-fleet" class="admin-section" style="display: none;">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-bus-simple"></i> Fleet</h2>
+                    <button class="btn btn-small" id="add-bus-btn">
+                        <i class="fas fa-plus"></i> Register Bus
+                    </button>
+                </div>
+                <div class="panel-body flush">
+                    <table class="data-table">
+                        <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Assigned route</th>
+                            <th>Live</th>
+                            <th>Status</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="fleet-admin-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<!-- ═══ Route modal ═══ -->
+<div class="modal-overlay" id="route-modal">
+    <div class="modal modal-lg" role="dialog" aria-modal="true" aria-labelledby="route-modal-title">
+        <div class="modal-header">
+            <h3 id="route-modal-title"><i class="fas fa-route"></i> New Route</h3>
+            <button class="modal-close" data-close="route-modal" aria-label="Close"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="route-form" novalidate>
+                <div class="form-grid">
+                    <div class="field" data-field="routeNumber">
+                        <label>Route number</label>
+                        <input type="number" name="routeNumber" min="1" max="999" required>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="name">
+                        <label>Route name</label>
+                        <input type="text" name="name" maxlength="100" placeholder="e.g. Railway Station Express" required>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="color">
+                        <label>Map color</label>
+                        <input type="color" name="color" value="#1d4ed8" style="height: 42px; padding: 4px;">
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="frequencyMinutes">
+                        <label>Frequency (minutes)</label>
+                        <input type="number" name="frequencyMinutes" min="1" max="240" value="15" required>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="firstBus">
+                        <label>First bus</label>
+                        <input type="time" name="firstBus" value="06:00" required>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="lastBus">
+                        <label>Last bus</label>
+                        <input type="time" name="lastBus" value="22:00" required>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field full" data-field="stops">
+                        <label>Stops — one per line: <code>Name | latitude | longitude</code></label>
+                        <textarea name="stops" rows="5" spellcheck="false"
+                                  placeholder="Central Station | 19.8762 | 75.3433&#10;City Mall | 19.8750 | 75.3450"></textarea>
+                        <div class="hint">At least 2 stops. These appear as markers on the rider map.</div>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field full" data-field="path">
+                        <label>Path polyline — one point per line: <code>latitude, longitude</code></label>
+                        <textarea name="path" rows="5" spellcheck="false"
+                                  placeholder="19.8762, 75.3433&#10;19.8750, 75.3450"></textarea>
+                        <div class="hint">At least 2 points. Leave empty to reuse the stop coordinates as the path.</div>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="active">
+                        <label>Status</label>
+                        <select name="active">
+                            <option value="true">Active</option>
+                            <option value="false">Suspended</option>
+                        </select>
+                        <div class="error-text"></div>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" data-close="route-modal">Cancel</button>
+            <button class="btn" id="route-save-btn"><i class="fas fa-check"></i> Save Route</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Bus modal ═══ -->
+<div class="modal-overlay" id="bus-modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bus-modal-title">
+        <div class="modal-header">
+            <h3 id="bus-modal-title"><i class="fas fa-bus-simple"></i> Register Bus</h3>
+            <button class="modal-close" data-close="bus-modal" aria-label="Close"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="bus-form" novalidate>
+                <div class="form-grid">
+                    <div class="field" data-field="code">
+                        <label>Bus code</label>
+                        <input type="text" name="code" placeholder="bus-6" pattern="[a-z0-9][a-z0-9-]{1,31}" required>
+                        <div class="hint">Lowercase letters, digits and hyphens (e.g. bus-6)</div>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="routeId">
+                        <label>Assigned route</label>
+                        <select name="routeId" required></select>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="active">
+                        <label>Status</label>
+                        <select name="active">
+                            <option value="true">Active</option>
+                            <option value="false">Out of service</option>
+                        </select>
+                        <div class="error-text"></div>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" data-close="bus-modal">Cancel</button>
+            <button class="btn" id="bus-save-btn"><i class="fas fa-check"></i> Save Bus</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Confirm modal ═══ -->
+<div class="modal-overlay" id="confirm-modal">
+    <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div class="modal-header">
+            <h3 id="confirm-title"><i class="fas fa-triangle-exclamation" style="color: var(--danger);"></i> Confirm deletion</h3>
+            <button class="modal-close" data-close="confirm-modal" aria-label="Close"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <p id="confirm-message">Are you sure?</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" data-close="confirm-modal">Cancel</button>
+            <button class="btn btn-danger" id="confirm-yes"><i class="fas fa-trash"></i> Delete</button>
+        </div>
+    </div>
+</div>
+
+<script src="admin.js"></script>
+</body>
+</html>

@@ -44,7 +44,7 @@ function setupLogin() {
         submitBtn.disabled = true;
 
         try {
-            const response = await fetch('/api/auth/login', {
+            const response = await fetch('/api/v1/auth/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -56,7 +56,7 @@ function setupLogin() {
 
             if (response.ok) {
                 // Check if user is a driver
-                if (data.role !== 'driver') {
+                if (data.role !== 'DRIVER') {
                     showError('Access denied. Driver credentials required.');
                     return;
                 }
@@ -74,7 +74,7 @@ function setupLogin() {
                 await initializeDashboard(data);
 
             } else {
-                const errorMsg = data.error || data.message || 'Login failed. Please check your credentials.';
+                const errorMsg = data.message || data.error || 'Login failed. Please check your credentials.';
                 showError(errorMsg);
             }
         } catch (error) {
@@ -135,9 +135,9 @@ async function initializeDashboard(userData) {
 // Update driver information in the UI
 function updateDriverInfo(userData) {
     const elements = {
-        'driver-username': userData.username || 'Driver',
-        'driver-bus-id': userData.busId || 'N/A',
-        'current-route': `Route ${userData.busId?.split('-')[1] || '1'}`
+        'driver-username': userData.displayName || userData.username || 'Driver',
+        'driver-bus-id': userData.busCode || 'N/A',
+        'current-route': 'Loading...'
     };
 
     Object.entries(elements).forEach(([id, value]) => {
@@ -147,10 +147,23 @@ function updateDriverInfo(userData) {
         }
     });
 
-    // Update passenger count (simulated)
-    const passengerCount = document.getElementById('passenger-count');
-    if (passengerCount) {
-        passengerCount.textContent = Math.floor(Math.random() * 45) + 5; // Random 5-50
+    // Resolve the real route assignment from the fleet API
+    if (userData.busCode) {
+        fetch('/api/v1/buses?size=100')
+            .then(res => res.ok ? res.json() : Promise.reject(res.status))
+            .then(page => {
+                const bus = page.content.find(b => b.code === userData.busCode);
+                const routeEl = document.getElementById('current-route');
+                if (routeEl) {
+                    routeEl.textContent = bus && bus.routeNumber != null
+                        ? `Route ${bus.routeNumber} — ${bus.routeName}`
+                        : 'Unassigned';
+                }
+            })
+            .catch(() => {
+                const routeEl = document.getElementById('current-route');
+                if (routeEl) routeEl.textContent = 'Unavailable';
+            });
     }
 }
 
@@ -230,8 +243,6 @@ function handleVisibilityToggle(isVisible) {
         const message = {
             type: 'driver-visibility',
             data: {
-                driverId: currentUser?.username,
-                busId: currentUser?.busId,
                 visible: isVisible
             }
         };
@@ -342,7 +353,7 @@ function handleLocationUpdate(position) {
                     <div style="text-align: center;">
                         <strong>Your Bus Location</strong><br>
                         <small>Driver: ${currentUser?.username || 'Unknown'}</small><br>
-                        <small>Bus: ${currentUser?.busId || 'Unknown'}</small>
+                        <small>Bus: ${currentUser?.busCode || 'Unknown'}</small>
                     </div>
                 `);
 
@@ -357,7 +368,7 @@ function handleLocationUpdate(position) {
             <div style="text-align: center;">
                 <strong>Your Bus Location</strong><br>
                 <small>Driver: ${currentUser?.username || 'Unknown'}</small><br>
-                <small>Bus: ${currentUser?.busId || 'Unknown'}</small><br>
+                <small>Bus: ${currentUser?.busCode || 'Unknown'}</small><br>
                 <hr style="margin: 5px 0;">
                 <small>Lat: ${latitude.toFixed(6)}</small><br>
                 <small>Lng: ${longitude.toFixed(6)}</small><br>
@@ -372,12 +383,11 @@ function handleLocationUpdate(position) {
         const locationData = {
             type: 'driver-location',
             data: {
-                busId: currentUser.busId,
-                driverId: currentUser.username,
                 coords: [latitude, longitude],
                 accuracy: accuracy,
                 timestamp: Date.now(),
-                visible: document.getElementById('visibility-toggle')?.checked || true
+                // ?? (not ||) so unchecking the toggle actually hides the bus
+                visible: document.getElementById('visibility-toggle')?.checked ?? true
             }
         };
 
@@ -404,13 +414,13 @@ function handleLocationUpdate(position) {
             console.log('WebSocket connected successfully');
             updateConnectionStatus('Connected');
 
-            // Send driver registration
+            // Register with the JWT — the server derives driver and bus
+            // identity from the token, so it cannot be spoofed.
             if (currentUser) {
                 ws.send(JSON.stringify({
                     type: 'driver-register',
                     data: {
-                        driverId: currentUser.username,
-                        busId: currentUser.busId,
+                        token: sessionStorage.getItem('driverToken'),
                         timestamp: Date.now()
                     }
                 }));
@@ -689,19 +699,7 @@ function setupLogout() {
                     ws = null;
                 }
 
-                // Call logout API
-                if (currentUser?.accessToken) {
-                    await fetch('/api/auth/logout', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${currentUser.accessToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }).catch(error => {
-                        console.error('Logout API error:', error);
-                    });
-                }
-
+                // JWT logout is client-side: discard the token.
                 // Clear stored data
                 sessionStorage.removeItem('driverToken');
                 sessionStorage.removeItem('driverData');
@@ -729,7 +727,7 @@ function checkExistingSession() {
             const userData = JSON.parse(driverData);
 
             // Validate token (basic check)
-            if (userData.username && userData.role === 'driver') {
+            if (userData.username && userData.role === 'DRIVER') {
                 currentUser = userData;
 
                 // Hide login panel and show driver panel

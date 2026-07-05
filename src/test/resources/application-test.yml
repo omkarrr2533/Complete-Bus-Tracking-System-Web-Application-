@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:citybus-test;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+
+app:
+  jwt:
+    secret: test-only-secret-key-that-is-at-least-32-bytes-long
+    expiration-minutes: 60
+  cors:
+    allowed-origins: "*"

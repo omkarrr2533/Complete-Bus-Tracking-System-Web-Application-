@@ -1,4 +1,6 @@
-// CityBus Tracker — Main application JavaScript
+// CityBus Tracker — Rider application
+// Data flows: REST API (/api/v1) for the route network + fleet,
+// WebSocket (/websocket) for live positions, speed and proximity alerts.
 
 let trackingMap = null;
 let homeMap = null;
@@ -9,6 +11,17 @@ let selectedBusRoute = null;
 let ws = null;
 let currentUser = null;
 let userLocation = null;
+let routesLoaded = null;   // promise so map init can await the network data
+
+// Live measured speed per bus (km/h), fed by WebSocket updates; eta.js reads this.
+window.liveBusSpeeds = {};
+
+// ── API helper ──
+async function apiGet(path) {
+    const res = await fetch(path, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+    return res.json();
+}
 
 // ── Dark mode ──
 function initDarkModeToggle() {
@@ -48,20 +61,15 @@ function switchToPage(pageName) {
 }
 
 function setupNavigation() {
-    // Sidebar nav links
     document.querySelectorAll('.nav-link').forEach(link => {
         link.addEventListener('click', e => {
-            e.preventDefault();
-            if (link.id === 'driver-login-link') {
-                window.location.href = '/driver';
-                return;
-            }
             const page = link.getAttribute('data-page');
-            if (page) switchToPage(page);
+            if (!page) return; // real links (driver/admin) navigate normally
+            e.preventDefault();
+            switchToPage(page);
         });
     });
 
-    // Footer links that have data-page
     document.querySelectorAll('[data-page]').forEach(el => {
         if (!el.classList.contains('nav-link')) {
             el.addEventListener('click', e => {
@@ -123,13 +131,9 @@ function autoLoginUser() {
 function updateUserInterface() {
     const userInfo       = document.getElementById('user-info');
     const userStatusText = document.getElementById('user-status-text');
-    const logoutBtn      = document.getElementById('logout-btn');
     if (userInfo && userStatusText) {
         userInfo.style.display = 'block';
         userStatusText.textContent = currentUser ? currentUser.username : 'Guest';
-        if (logoutBtn && currentUser && currentUser.role === 'driver') {
-            logoutBtn.style.display = 'block';
-        }
     }
 }
 
@@ -143,33 +147,159 @@ function checkExistingSession() {
     }
 }
 
+// ── Route network (fetched from the API — reflects admin CRUD changes) ──
+function loadBusRoutes() {
+    if (routesLoaded) return routesLoaded;
+    routesLoaded = apiGet('/api/v1/routes')
+        .then(routes => {
+            window.busRoutes = {};
+            routes.forEach(r => {
+                window.busRoutes[String(r.routeNumber)] = {
+                    id: r.id,
+                    name: r.name,
+                    color: r.color,
+                    path: r.path,
+                    firstBus: r.firstBus,
+                    lastBus: r.lastBus,
+                    frequencyMinutes: r.frequencyMinutes,
+                    active: r.active,
+                    stops: r.stops.map(s => ({ name: s.name, coords: [s.lat, s.lng] }))
+                };
+            });
+            renderRoutesTable(routes);
+            renderRouteFilter(routes);
+            renderSchedule(routes);
+            return window.busRoutes;
+        })
+        .catch(err => {
+            console.error('Failed to load routes', err);
+            showNotification('Could not load route data. Is the server running?', 'error');
+            window.busRoutes = {};
+            return window.busRoutes;
+        });
+    return routesLoaded;
+}
+
+// ── Routes page table ──
+function renderRoutesTable(routes) {
+    const tbody = document.getElementById('routes-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = routes.map(r => `
+        <tr data-route-id="${r.routeNumber}" class="fade-in-row">
+            <td><span class="route-chip" style="--chip-color:${r.color}">${r.routeNumber}</span></td>
+            <td>${escapeHtml(r.name)}</td>
+            <td>${r.stops.length}</td>
+            <td>${r.frequencyMinutes} mins</td>
+            <td>${formatTime12h(r.firstBus)}</td>
+            <td>${formatTime12h(r.lastBus)}</td>
+            <td><span class="badge ${r.active ? 'badge-success' : 'badge-muted'}">${r.active ? 'Active' : 'Suspended'}</span></td>
+        </tr>`).join('');
+}
+
+function renderRouteFilter(routes) {
+    const sel = document.getElementById('route-filter');
+    if (!sel) return;
+    sel.innerHTML = '<option value="all">All Routes</option>' + routes.map(r =>
+        `<option value="${r.routeNumber}">Route ${r.routeNumber}: ${escapeHtml(r.name)}</option>`).join('');
+}
+
+// ── Schedule page (derived from live route data) ──
+function renderSchedule(routes) {
+    const filters   = document.getElementById('schedule-filters');
+    const container = document.getElementById('schedule-container');
+    if (!filters || !container) return;
+
+    filters.innerHTML = '<button class="schedule-filter-btn active" data-route="all">All Routes</button>' +
+        routes.map(r => `<button class="schedule-filter-btn" data-route="${r.routeNumber}">Route ${r.routeNumber}</button>`).join('');
+
+    container.innerHTML = routes.map(r => {
+        const stopRows = r.stops.slice(0, 5).map((s, i) => `
+            <li>
+                <span class="stop-name">${escapeHtml(s.name)}</span>
+                <span class="stop-time">${formatTime12h(addMinutes(r.firstBus, i * r.frequencyMinutes))}</span>
+            </li>`).join('');
+        const busesPerDay = estimateBusesPerDay(r.firstBus, r.lastBus, r.frequencyMinutes);
+        return `
+        <div class="schedule-card" data-route="${r.routeNumber}">
+            <div class="schedule-header" style="--route-color:${r.color}">
+                <h3>Route ${r.routeNumber}: ${escapeHtml(r.name)}</h3>
+                <div class="schedule-time">${formatTime12h(r.firstBus)} - ${formatTime12h(r.lastBus)}</div>
+            </div>
+            <div class="schedule-content">
+                <ul class="schedule-stops">${stopRows}</ul>
+                <div class="route-stats">
+                    <div class="stat-item"><div class="stat-value">${r.stops.length}</div><div class="stat-label">Total Stops</div></div>
+                    <div class="stat-item"><div class="stat-value">${r.frequencyMinutes}</div><div class="stat-label">Min Frequency</div></div>
+                    <div class="stat-item"><div class="stat-value">${busesPerDay}</div><div class="stat-label">Buses/Day</div></div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    filters.querySelectorAll('.schedule-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            filters.querySelectorAll('.schedule-filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const route = btn.getAttribute('data-route');
+            container.querySelectorAll('.schedule-card').forEach(card => {
+                card.style.display = (route === 'all' || card.getAttribute('data-route') === route) ? '' : 'none';
+            });
+        });
+    });
+}
+
+function addMinutes(hhmm, minutes) {
+    const [h, m] = hhmm.split(':').map(Number);
+    const total = (h * 60 + m + minutes) % (24 * 60);
+    return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function formatTime12h(hhmm) {
+    if (!hhmm) return '--';
+    const [h, m] = hhmm.split(':').map(Number);
+    const suffix = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 === 0 ? 12 : h % 12;
+    return `${hour12}:${String(m).padStart(2, '0')} ${suffix}`;
+}
+
+function estimateBusesPerDay(firstBus, lastBus, frequencyMinutes) {
+    const [fh, fm] = firstBus.split(':').map(Number);
+    const [lh, lm] = lastBus.split(':').map(Number);
+    const span = (lh * 60 + lm) - (fh * 60 + fm);
+    return span > 0 ? Math.floor(span / frequencyMinutes) : 0;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text ?? '';
+    return div.innerHTML;
+}
+
 // ── Home map ──
 function initHomeMap() {
     const el = document.getElementById('home-map');
     if (!el || homeMap) return;
 
-    homeMap = L.map('home-map').setView([19.8762, 75.3433], 13);
+    homeMap = L.map('home-map').setView([19.8762, 75.3433], 12);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(homeMap);
 
-    const stops = [
-        { name: 'Central Bus Station', coords: [19.8762, 75.3433] },
-        { name: 'Railway Station',     coords: [19.8610, 75.3101] },
-        { name: 'Airport Road',        coords: [19.8650, 75.3980] },
-        { name: 'City Center Mall',    coords: [19.8750, 75.3450] },
-        { name: 'Medical College',     coords: [19.8690, 75.3200] }
-    ];
-
-    stops.forEach(s => {
-        L.marker(s.coords, {
-            icon: L.divIcon({
-                className: 'stop-marker',
-                html: `<div style="background:#1d4ed8;width:12px;height:12px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 6px rgba(29,78,216,0.4);"></div>`,
-                iconSize: [18, 18],
-                iconAnchor: [9, 9]
-            })
-        }).addTo(homeMap).bindPopup(`<strong>${s.name}</strong><br><small>Bus Stop</small>`);
+    loadBusRoutes().then(routes => {
+        Object.values(routes).forEach(route => {
+            if (!route.active) return;
+            L.polyline(route.path, { color: route.color, weight: 3, opacity: 0.6 }).addTo(homeMap);
+            route.stops.forEach(s => {
+                L.marker(s.coords, {
+                    icon: L.divIcon({
+                        className: 'stop-marker',
+                        html: `<div style="background:${route.color};width:10px;height:10px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`,
+                        iconSize: [14, 14],
+                        iconAnchor: [7, 7]
+                    })
+                }).addTo(homeMap).bindPopup(`<strong>${escapeHtml(s.name)}</strong><br><small>${escapeHtml(route.name)}</small>`);
+            });
+        });
     });
 }
 
@@ -190,8 +320,7 @@ function initTrackingMap() {
     }).addTo(trackingMap);
 
     getUserLocation();
-    loadBusRoutes();
-    generateBusList();
+    loadBusRoutes().then(() => generateBusList());
     connectWebSocket();
 }
 
@@ -228,117 +357,72 @@ function sendUserLocation(lat, lng) {
     }
 }
 
-// ── Bus routes data ──
-function loadBusRoutes() {
-    window.busRoutes = {
-        "1": {
-            name: "Ranjangaon Phata",
-            path: [
-                [19.851408,75.209897],[19.840466,75.232433],[19.845526,75.240380],
-                [19.838546,75.251527],[19.837301,75.253563],[19.847091,75.265890],
-                [19.832842,75.270292],[19.827377,75.289950],[19.832516,75.290357]
-            ],
-            color: '#1d4ed8',
-            stops: [
-                { name:'Ranjangaon Phata', coords:[19.875743,75.334755] },
-                { name:'Alphonsa',         coords:[19.840466,75.232433] },
-                { name:'Pratap Chowk',     coords:[19.839425,75.241251] },
-                { name:'MIDC RD',          coords:[19.838546,75.251527] },
-                { name:'Gollwadi Chowk',   coords:[19.847091,75.265890] },
-                { name:'Paithan RD',       coords:[19.827377,75.289950] },
-                { name:'CSMSS',            coords:[19.832516,75.290357] }
-            ]
-        },
-        "2": {
-            name: "Fame Tapadia Signal",
-            path: [
-                [19.876796,75.366045],[19.883883,75.365047],[19.895284,75.364767],
-                [19.904718,75.357021],[19.909854,75.353163],[19.914915,75.352384],
-                [19.906784,75.343839],[19.904839,75.342060],[19.894397,75.337078],
-                [19.892250,75.327619],[19.884206,75.317144],[19.861054,75.310145],[19.832545,75.290382]
-            ],
-            color: '#0f766e',
-            stops: [
-                { name:'Fame Tapadia Signal', coords:[19.876796,75.366045] },
-                { name:'N1 Ganpati',          coords:[19.883883,75.365047] },
-                { name:'Wokhardt',            coords:[19.895284,75.364767] },
-                { name:'Ambedkar Chowk',      coords:[19.898180,75.362212] },
-                { name:'Railway Station',     coords:[19.861054,75.310145] },
-                { name:'Paithan RD',          coords:[19.861054,75.310145] },
-                { name:'CSMSS',               coords:[19.832545,75.290382] }
-            ]
-        },
-        "3": {
-            name: "Chikalthana",
-            path: [
-                [19.873573,75.394782],[19.869982,75.394397],[19.871974,75.385324],
-                [19.873522,75.370390],[19.874840,75.355761],[19.875275,75.352356],
-                [19.876049,75.341475],[19.873642,75.328705],[19.872266,75.322000],
-                [19.860902,75.310143],[19.861369,75.306988],[19.847678,75.296336],[19.833201,75.290463]
-            ],
-            color: '#7c3aed',
-            stops: [
-                { name:'Chikalthana',    coords:[19.873573,75.394782] },
-                { name:'Dhoot Hospital', coords:[19.869982,75.394397] },
-                { name:'Akashwani',      coords:[19.876049,75.341475] },
-                { name:'Jai Tower',      coords:[19.861369,75.306988] },
-                { name:'CSMSS',          coords:[19.833201,75.290463] }
-            ]
-        },
-        "4": {
-            name: "Baliram Patil High School",
-            path: [
-                [19.895877,75.358173],[19.888110,75.360340],[19.879980,75.360448],
-                [19.875295,75.353286],[19.869060,75.350870],[19.858987,75.344975],
-                [19.857757,75.334539],[19.850451,75.333036],[19.854130,75.305745],
-                [19.841854,75.293056],[19.832519,75.290360]
-            ],
-            color: '#d97706',
-            stops: [
-                { name:'Baliram Patil H.S.', coords:[19.895877,75.358173] },
-                { name:'Seven Hills Signal',  coords:[19.875295,75.353286] },
-                { name:'Shivaji Nagar',       coords:[19.857757,75.334539] },
-                { name:'CSMSS',              coords:[19.832519,75.290360] }
-            ]
-        }
-    };
-}
-
-// ── Bus list ──
-function generateBusList() {
+// ── Bus list (fetched from the fleet API, live status merged in) ──
+async function generateBusList() {
     const list = document.getElementById('bus-list');
     if (!list) return;
 
-    const buses = [
-        { id:'bus-1', route:'Route 1 — Ranjangaon Phata',       routeId:'1', nextStop:'Alphonsa' },
-        { id:'bus-2', route:'Route 2 — Fame Tapadia Signal',     routeId:'2', nextStop:'Wokhardt' },
-        { id:'bus-3', route:'Route 3 — Chikalthana',             routeId:'3', nextStop:'Akashwani' },
-        { id:'bus-4', route:'Route 4 — Baliram Patil H.S.',     routeId:'4', nextStop:'Shivaji Nagar' },
-        { id:'bus-5', route:'Route 1 — Ranjangaon Phata (2nd)', routeId:'1', nextStop:'MIDC RD' }
-    ];
+    list.innerHTML = Array.from({ length: 4 }, () =>
+        '<div class="bus-card skeleton-card"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div></div>'
+    ).join('');
+
+    let buses;
+    try {
+        const page = await apiGet('/api/v1/buses?size=100');
+        buses = page.content;
+    } catch (err) {
+        console.error('Failed to load buses', err);
+        list.innerHTML = '<div class="empty-state"><i class="fas fa-bus"></i><p>Could not load the fleet. Check that the server is running.</p></div>';
+        return;
+    }
+
+    if (!buses.length) {
+        list.innerHTML = '<div class="empty-state"><i class="fas fa-bus"></i><p>No buses registered yet.</p></div>';
+        return;
+    }
 
     list.innerHTML = '';
     buses.forEach(bus => {
+        const routeId = bus.routeNumber != null ? String(bus.routeNumber) : null;
+        const online  = !!(bus.live && bus.live.visible && bus.live.coords);
         const card = document.createElement('div');
         card.className = 'bus-card';
-        card.setAttribute('data-bus-id', bus.id);
-        card.setAttribute('data-route-id', bus.routeId);
+        card.setAttribute('data-bus-id', bus.code);
+        card.setAttribute('data-route-id', routeId ?? '');
         card.innerHTML = `
-            <div class="bus-number">${bus.id.toUpperCase()}</div>
-            <div class="bus-route">${bus.route}</div>
-            <div class="bus-status status-active"><i class="fas fa-circle" style="font-size:6px;"></i> Active</div>
-            <div class="bus-next-stop">Next stop: ${bus.nextStop}</div>
-            <button class="track-bus-btn" data-bus-id="${bus.id}" data-route-id="${bus.routeId}">
+            <div class="bus-number">${escapeHtml(bus.code.toUpperCase())}</div>
+            <div class="bus-route">Route ${bus.routeNumber ?? '—'} — ${escapeHtml(bus.routeName ?? 'Unassigned')}</div>
+            <div class="bus-status ${online ? 'status-active' : 'status-offline'}">
+                <i class="fas fa-circle" style="font-size:6px;"></i> ${online ? 'Live' : 'Offline'}
+            </div>
+            <div class="bus-next-stop">${online && bus.live.speedKmh != null
+                ? `Moving at ${bus.live.speedKmh} km/h`
+                : `Every ${busFrequency(routeId)} min from ${busFirstBus(routeId)}`}</div>
+            <button class="track-bus-btn" data-bus-id="${bus.code}" data-route-id="${routeId ?? ''}">
                 <i class="fas fa-map-marker-alt"></i> Track This Bus
             </button>`;
         list.appendChild(card);
 
+        if (online && bus.live.speedKmh != null) {
+            window.liveBusSpeeds[bus.code] = bus.live.speedKmh;
+        }
+
         card.querySelector('.track-bus-btn').addEventListener('click', e => {
             e.stopPropagation();
-            trackBus(bus.id, bus.routeId);
+            if (routeId) trackBus(bus.code, routeId);
         });
-        card.addEventListener('click', () => selectBusRoute(bus.routeId));
+        card.addEventListener('click', () => {
+            if (routeId) selectBusRoute(routeId, bus.code);
+        });
     });
+}
+
+function busFrequency(routeId) {
+    return (routeId && window.busRoutes?.[routeId]?.frequencyMinutes) ?? '—';
+}
+function busFirstBus(routeId) {
+    const t = routeId && window.busRoutes?.[routeId]?.firstBus;
+    return t ? formatTime12h(t) : '--';
 }
 
 // ── Route display ──
@@ -348,17 +432,18 @@ function trackBus(busId, routeId) {
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'track-bus', data: { busId } }));
     }
+    if (typeof triggerETA === 'function') triggerETA(busId, routeId);
     showNotification(`Tracking ${busId.toUpperCase()} on ${window.busRoutes[routeId]?.name || 'Route ' + routeId}`);
 }
 
-function selectBusRoute(routeId) {
+function selectBusRoute(routeId, busId) {
     clearRouteSelection();
     showRoute(routeId);
     document.querySelectorAll('.bus-card').forEach(card => {
-        card.classList.toggle('selected', card.getAttribute('data-route-id') === routeId);
+        card.classList.toggle('selected', card.getAttribute('data-bus-id') === busId);
     });
     selectedBusRoute = routeId;
-    if (typeof triggerETA === 'function') triggerETA(busId, routeId);
+    if (busId && typeof triggerETA === 'function') triggerETA(busId, routeId);
 }
 
 function showRoute(routeId) {
@@ -381,7 +466,7 @@ function showRoute(routeId) {
                 iconSize: [16, 16], iconAnchor: [8, 8]
             })
         }).addTo(trackingMap)
-          .bindPopup(`<strong>Stop ${i+1}: ${stop.name}</strong><br><small>${route.name}</small>`);
+          .bindPopup(`<strong>Stop ${i + 1}: ${escapeHtml(stop.name)}</strong><br><small>${escapeHtml(route.name)}</small>`);
         routeLayers[routeId].stops.push(m);
     });
 
@@ -395,14 +480,9 @@ function clearRouteSelection() {
         routeLayers[id].stops.forEach(m => trackingMap.removeLayer(m));
     });
     routeLayers = {};
-    Object.keys(busMarkers).forEach(id => {
-        if (busMarkers[id].isSimulated) {
-            trackingMap.removeLayer(busMarkers[id]);
-            delete busMarkers[id];
-        }
-    });
     document.querySelectorAll('.bus-card').forEach(c => c.classList.remove('selected'));
     selectedBusRoute = null;
+    if (typeof hideETAPanel === 'function') hideETAPanel();
 }
 
 // ── Real-time bus updates ──
@@ -412,6 +492,7 @@ function updateBusLocations(busData) {
         if (!bus.coords || bus.coords.length < 2) return;
         const [lat, lng] = bus.coords;
         const id = bus.busId;
+        if (bus.speedKmh != null) window.liveBusSpeeds[id] = bus.speedKmh;
         if (busMarkers[id]) {
             busMarkers[id].setLatLng([lat, lng]);
         } else {
@@ -422,43 +503,50 @@ function updateBusLocations(busData) {
             });
             busMarkers[id] = L.marker([lat, lng], { icon })
                 .addTo(trackingMap)
-                .bindPopup(`<strong>${id.toUpperCase()}</strong><br>Driver: ${bus.driverId || 'Unknown'}<br><small>Live tracking</small>`);
-            busMarkers[id].isSimulated = false;
+                .bindPopup(`<strong>${escapeHtml(id.toUpperCase())}</strong><br>Driver: ${escapeHtml(bus.driverId || 'Unknown')}<br><small>Live tracking</small>`);
         }
-        updateBusCardStatus(id, 'Active', new Date(bus.lastSeen));
+        updateBusCardStatus(id, 'Live', bus.lastSeen ? new Date(bus.lastSeen) : null, bus.speedKmh);
     });
 }
 
-function updateBusCardStatus(busId, status, lastSeen) {
+function updateBusCardStatus(busId, status, lastSeen, speedKmh) {
     const card = document.querySelector(`[data-bus-id="${busId}"]`);
     if (!card) return;
     const el = card.querySelector('.bus-status');
     const ns = card.querySelector('.bus-next-stop');
     if (el) {
-        el.className = `bus-status status-${status.toLowerCase()}`;
+        const cls = status === 'Live' ? 'status-active' : 'status-offline';
+        el.className = `bus-status ${cls}`;
         el.innerHTML = `<i class="fas fa-circle" style="font-size:6px;"></i> ${status}`;
     }
-    if (ns && lastSeen) {
-        const mins = Math.round((Date.now() - lastSeen) / 60000);
-        ns.textContent = `Updated ${mins} min ago`;
+    if (ns) {
+        if (speedKmh != null) {
+            ns.textContent = `Moving at ${speedKmh} km/h`;
+        } else if (lastSeen) {
+            const mins = Math.round((Date.now() - lastSeen.getTime()) / 60000);
+            ns.textContent = mins <= 0 ? 'Updated just now' : `Updated ${mins} min ago`;
+        }
     }
 }
 
 function updateSingleBusLocation(data) {
     if (data.coords && data.coords.length >= 2) {
         const id = data.busId;
+        if (data.speedKmh != null) window.liveBusSpeeds[id] = data.speedKmh;
         if (busMarkers[id]) busMarkers[id].setLatLng(data.coords);
         else updateBusLocations([data]);
+        updateBusCardStatus(id, 'Live', new Date(), data.speedKmh);
         if (typeof refreshETAIfActive === 'function') refreshETAIfActive(id, data.coords);
     }
 }
 
 function removeBusMarker(busId) {
-    if (busMarkers[busId]) {
+    if (busId && busMarkers[busId]) {
         trackingMap.removeLayer(busMarkers[busId]);
         delete busMarkers[busId];
-        updateBusCardStatus(busId, 'Offline', new Date());
     }
+    delete window.liveBusSpeeds[busId];
+    updateBusCardStatus(busId, 'Offline', new Date(), null);
 }
 
 // ── WebSocket ──
@@ -470,8 +558,9 @@ function connectWebSocket() {
         ws.onopen = () => {
             ws.send(JSON.stringify({
                 type: 'user-register',
-                data: { userId: 'user_' + Math.random().toString(36).substr(2, 9), timestamp: Date.now() }
+                data: { userId: 'user-' + Math.random().toString(36).slice(2, 11), timestamp: Date.now() }
             }));
+            if (userLocation) sendUserLocation(userLocation.lat, userLocation.lng);
         };
         ws.onmessage = e => {
             try { handleWebSocketMessage(JSON.parse(e.data)); }
@@ -484,10 +573,12 @@ function connectWebSocket() {
 
 function handleWebSocketMessage(msg) {
     switch (msg.type) {
-        case 'active-buses':      if (msg.data) updateBusLocations(msg.data); break;
+        case 'active-buses':        if (msg.data) updateBusLocations(msg.data); break;
         case 'bus-location-update': if (msg.data) updateSingleBusLocation(msg.data); break;
-        case 'driver-left':       if (msg.data) removeBusMarker(msg.data.driverId); break;
-        case 'tracking-started':  if (msg.data) showNotification(`Now tracking ${msg.data.busId}`); break;
+        case 'driver-left':         if (msg.data) removeBusMarker(msg.data.busId); break;
+        case 'new-driver-available': generateBusList(); break;
+        case 'tracking-started':    if (msg.data) showNotification(`Now tracking ${msg.data.busId.toUpperCase()}`); break;
+        case 'proximity-alert':     if (msg.data) showNotification(msg.data.message, 'warning'); break;
     }
 }
 
@@ -503,9 +594,9 @@ function performBusSearch() {
     if (input) filterBusList(input.value.toLowerCase());
 }
 function filterBusList(term) {
-    document.querySelectorAll('.bus-card').forEach(card => {
-        const num   = card.querySelector('.bus-number').textContent.toLowerCase();
-        const route = card.querySelector('.bus-route').textContent.toLowerCase();
+    document.querySelectorAll('#bus-list .bus-card').forEach(card => {
+        const num   = card.querySelector('.bus-number')?.textContent.toLowerCase() ?? '';
+        const route = card.querySelector('.bus-route')?.textContent.toLowerCase() ?? '';
         card.style.display = (!term || num.includes(term) || route.includes(term)) ? '' : 'none';
     });
 }
@@ -515,8 +606,8 @@ function setupRouteFilter() {
     if (!sel) return;
     sel.addEventListener('change', e => {
         const val = e.target.value;
-        document.querySelectorAll('.bus-card').forEach(card => {
-            card.style.display = (!val || val === 'all' || card.getAttribute('data-route-id') === val) ? '' : 'none';
+        document.querySelectorAll('#routes-table-body tr').forEach(row => {
+            row.style.display = (!val || val === 'all' || row.getAttribute('data-route-id') === val) ? '' : 'none';
         });
     });
 }
@@ -528,20 +619,25 @@ function handleContactFormSubmit() {
     if (!form) return;
     const data = new FormData(form);
     if (!data.get('name') || !data.get('email') || !data.get('message')) {
-        alert('Please fill in all required fields');
+        showNotification('Please fill in all required fields', 'error');
         return;
     }
     if (banner) { banner.classList.add('show'); setTimeout(() => banner.classList.remove('show'), 5000); }
     form.reset();
 }
 
-// ── Notification ──
-function showNotification(message) {
+// ── Toast notifications ──
+function showNotification(message, type = 'success') {
+    const icons = { success: 'fa-check-circle', error: 'fa-circle-exclamation', warning: 'fa-bell', info: 'fa-circle-info' };
     const n = document.createElement('div');
-    n.className = 'notification';
-    n.innerHTML = `<div class="notification-content"><i class="fas fa-check-circle"></i><span>${message}</span></div>`;
+    n.className = `notification notification-${type}`;
+    n.innerHTML = `<div class="notification-content"><i class="fas ${icons[type] || icons.info}"></i><span>${escapeHtml(message)}</span></div>`;
     document.body.appendChild(n);
-    setTimeout(() => n.remove(), 3000);
+    requestAnimationFrame(() => n.classList.add('visible'));
+    setTimeout(() => {
+        n.classList.remove('visible');
+        setTimeout(() => n.remove(), 350);
+    }, 3500);
 }
 
 // ── Chatbot integration ──
@@ -552,18 +648,6 @@ function integrateChatbot() {
             setTimeout(() => window.askChatbot(`Where is bus ${busNumber}?`), 300);
         }
     };
-    const navMenu = document.querySelector('.nav-menu');
-    if (navMenu) {
-        const helpLink = document.createElement('a');
-        helpLink.href = '#';
-        helpLink.className = 'nav-item nav-link';
-        helpLink.innerHTML = '<i class="nav-icon fas fa-robot"></i><span class="nav-text">AI Assistant</span>';
-        helpLink.addEventListener('click', e => {
-            e.preventDefault();
-            if (window.citybusChatbot) window.citybusChatbot.openChatbot();
-        });
-        navMenu.appendChild(helpLink);
-    }
 }
 
 // ── Init ──
@@ -575,35 +659,17 @@ document.addEventListener('DOMContentLoaded', () => {
     setupRouteFilter();
     checkExistingSession();
     integrateChatbot();
+    loadBusRoutes();
 
-    // Init home map if home page is active
     const home = document.getElementById('home');
     if (home && home.classList.contains('active')) {
         setTimeout(() => initHomeMap(), 300);
     }
-
-    // Watch for page activation
-    const observer = new MutationObserver(mutations => {
-        mutations.forEach(m => {
-            if (m.type !== 'attributes' || m.attributeName !== 'class') return;
-            const target = m.target;
-            if (!target.classList.contains('active')) return;
-            if (target.id === 'home' && !homeMap)     setTimeout(() => initHomeMap(), 100);
-            if (target.id === 'tracking' && !trackingMap) setTimeout(() => initTrackingMap(), 100);
-        });
-    });
-    document.querySelectorAll('.page').forEach(p => observer.observe(p, { attributes: true }));
 });
 
 window.addEventListener('resize', () => {
     if (trackingMap) setTimeout(() => trackingMap.invalidateSize(), 100);
     if (homeMap)     setTimeout(() => homeMap.invalidateSize(), 100);
-});
-
-document.addEventListener('click', e => {
-    if (e.target.closest('#tracking-map') && !e.target.closest('.bus-card') && !e.target.closest('.track-bus-btn')) {
-        if (selectedBusRoute) clearRouteSelection();
-    }
 });
 
 // PWA service worker
