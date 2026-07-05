@@ -1,15 +1,60 @@
 server:
-  port: 8089  # Changed from 8080 to 8089 as requested
+  port: 8081
 
 spring:
   application:
-    name: CityBus Tracker
+    name: citybus-tracker
 
-jwt:
-  secret: ${JWT_SECRET:your_super_secret_key_change_this_in_production_must_be_at_least_256_bits_long_for_security}
+  datasource:
+    # File-based H2 keeps the demo zero-install while exercising real JPA.
+    # Swap the URL for PostgreSQL in production; no code changes required.
+    url: jdbc:h2:file:./data/citybus;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  cache:
+    type: caffeine
+    cache-names: routes
+    caffeine:
+      spec: maximumSize=500,expireAfterWrite=10m
+
+app:
+  jwt:
+    # Override in any real deployment: set the JWT_SECRET environment variable.
+    secret: ${JWT_SECRET:citybus-dev-only-secret-key-change-me-0123456789abcdef}
+    expiration-minutes: 480
+  cors:
+    allowed-origins: "*"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
 
 logging:
   level:
-    com.citybus: DEBUG
-    org.springframework.security: INFO
-    org.springframework.web.socket: INFO
+    com.citybus: INFO
+    org.springframework.web.socket: WARN

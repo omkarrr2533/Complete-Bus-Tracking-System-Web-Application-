@@ -1,468 +1,301 @@
 package com.citybus.websocket;
 
-import com.citybus.model.BusLocation;
-import com.citybus.service.AuthService;
-import com.citybus.service.BusTrackingService;
+import com.citybus.dto.LiveBusDto;
+import com.citybus.security.JwtService;
+import com.citybus.service.LiveTrackingService;
+import com.citybus.service.LiveTrackingService.ClientSession;
+import com.citybus.service.LiveTrackingService.ClientType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.Claims;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.web.socket.*;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorator;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Transport layer only: parses messages, authenticates drivers, and routes
+ * everything stateful to {@link LiveTrackingService}. Sessions are wrapped in
+ * {@link ConcurrentWebSocketSessionDecorator} because broadcasts (scheduler
+ * thread) and acknowledgements (I/O thread) may write concurrently, which the
+ * raw session forbids.
+ *
+ * Protocol (JSON, {"type": ..., "data": ...}):
+ *   in:  driver-register{token}, driver-location, user-register, user-location,
+ *        get-active-buses, get-other-drivers, driver-visibility, track-bus, ping
+ *   out: connection-established, driver-registered, user-registered,
+ *        active-buses, bus-location-update, location-acknowledged, other-drivers,
+ *        tracking-started, driver-left, proximity-alert, pong, error
+ */
 @Component
-public class BusTrackingWebSocketHandler implements WebSocketHandler {
+public class BusTrackingWebSocketHandler extends TextWebSocketHandler {
 
-    private final BusTrackingService busTrackingService;
-    private final AuthService authService;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final Logger log = LoggerFactory.getLogger(BusTrackingWebSocketHandler.class);
 
-    // Store active sessions
+    private static final long SEND_TIME_LIMIT_MS = 2_000;
+    private static final int SEND_BUFFER_LIMIT_BYTES = 128 * 1024;
+    private static final long STALE_SESSION_TIMEOUT_MS = 2 * 60 * 1000;
+
+    private final LiveTrackingService tracking;
+    private final JwtService jwtService;
+    private final ObjectMapper objectMapper;
+
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
-    private final Map<String, Map<String, Object>> sessionData = new ConcurrentHashMap<>();
-    private final Map<String, Map<String, Object>> activeDrivers = new ConcurrentHashMap<>();
-    private final Map<String, Map<String, Object>> activeUsers = new ConcurrentHashMap<>();
 
-    public BusTrackingWebSocketHandler(BusTrackingService busTrackingService, AuthService authService) {
-        this.busTrackingService = busTrackingService;
-        this.authService = authService;
+    public BusTrackingWebSocketHandler(LiveTrackingService tracking,
+                                       JwtService jwtService,
+                                       ObjectMapper objectMapper) {
+        this.tracking = tracking;
+        this.jwtService = jwtService;
+        this.objectMapper = objectMapper;
     }
 
     @Override
-    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        sessions.put(session.getId(), session);
-        System.out.println("WebSocket connection established: " + session.getId());
-
-         sendMessage(session, "connection-established", Map.of(
+    public void afterConnectionEstablished(WebSocketSession session) {
+        sessions.put(session.getId(), new ConcurrentWebSocketSessionDecorator(
+                session, (int) SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT_BYTES,
+                ConcurrentWebSocketSessionDecorator.OverflowStrategy.DROP));
+        send(session.getId(), "connection-established", Map.of(
                 "sessionId", session.getId(),
-                "timestamp", System.currentTimeMillis()
-        ));
+                "timestamp", System.currentTimeMillis()));
     }
 
     @Override
-    public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) throws Exception {
+    public void handleMessage(WebSocketSession rawSession, WebSocketMessage<?> message) {
+        String sessionId = rawSession.getId();
         try {
-            String payload = message.getPayload().toString();
-            JsonNode jsonNode = objectMapper.readTree(payload);
-            String messageType = jsonNode.has("type") ? jsonNode.get("type").asText() : "unknown";
+            JsonNode root = objectMapper.readTree(message.getPayload().toString());
+            String type = root.path("type").asText("unknown");
+            JsonNode data = root.path("data");
 
-            System.out.println("Received message type: " + messageType + " from session: " + session.getId());
-
-            switch (messageType) {
-                case "driver-register":
-                    handleDriverRegister(session, jsonNode);
-                    break;
-                case "driver-location":
-                    handleDriverLocation(session, jsonNode);
-                    break;
-                case "user-register":
-                    handleUserRegister(session, jsonNode);
-                    break;
-                case "user-location":
-                    handleUserLocation(session, jsonNode);
-                    break;
-                case "get-active-buses":
-                    handleGetActiveBuses(session);
-                    break;
-                case "get-other-drivers":
-                    handleGetOtherDrivers(session, jsonNode);
-                    break;
-                case "driver-visibility":
-                    handleDriverVisibility(session, jsonNode);
-                    break;
-                case "track-bus":
-                    handleTrackBus(session, jsonNode);
-                    break;
-                case "ping":
-                    handlePing(session);
-                    break;
-                default:
-                    sendErrorMessage(session, "Unknown message type: " + messageType);
+            switch (type) {
+                case "driver-register" -> handleDriverRegister(sessionId, data);
+                case "driver-location" -> handleDriverLocation(sessionId, data);
+                case "user-register" -> handleUserRegister(sessionId, data);
+                case "user-location" -> handleUserLocation(sessionId, data);
+                case "get-active-buses" -> send(sessionId, "active-buses", tracking.snapshotVisibleBuses());
+                case "get-other-drivers" -> handleGetOtherDrivers(sessionId);
+                case "driver-visibility" -> handleDriverVisibility(sessionId, data);
+                case "track-bus" -> handleTrackBus(sessionId, data);
+                case "ping" -> handlePing(sessionId);
+                default -> sendError(sessionId, "Unknown message type: " + type);
             }
         } catch (Exception e) {
-            System.err.println("Error handling WebSocket message: " + e.getMessage());
-            sendErrorMessage(session, "Error processing message: " + e.getMessage());
+            log.warn("Failed to handle WebSocket message from {}: {}", sessionId, e.getMessage());
+            sendError(sessionId, "Could not process message");
         }
     }
 
-    private void handleDriverRegister(WebSocketSession session, JsonNode jsonNode) throws IOException {
-        JsonNode data = jsonNode.get("data");
-        if (data != null && data.has("driverId") && data.has("busId")) {
-            String driverId = data.get("driverId").asText();
-            String busId = data.get("busId").asText();
+    /**
+     * Drivers must present the JWT they received at login. The bus they
+     * broadcast for is taken from the token, never from the payload, so a
+     * driver cannot impersonate another vehicle.
+     */
+    private void handleDriverRegister(String sessionId, JsonNode data) {
+        String token = data.path("token").asText(null);
+        Optional<Claims> claims = token == null ? Optional.empty() : jwtService.parse(token);
 
-            Map<String, Object> driverInfo = new HashMap<>();
-            driverInfo.put("sessionId", session.getId());
-            driverInfo.put("driverId", driverId);
-            driverInfo.put("busId", busId);
-            driverInfo.put("coords", null);
-            driverInfo.put("visible", true);
-            driverInfo.put("lastSeen", System.currentTimeMillis());
-            driverInfo.put("status", "active");
+        if (claims.isEmpty() || !"DRIVER".equals(claims.get().get(JwtService.CLAIM_ROLE, String.class))) {
+            sendError(sessionId, "Driver authentication failed. Log in again.");
+            return;
+        }
+        String busCode = claims.get().get(JwtService.CLAIM_BUS, String.class);
+        if (busCode == null) {
+            sendError(sessionId, "No bus is assigned to this driver account.");
+            return;
+        }
+        String driverId = claims.get().getSubject();
+        tracking.registerDriver(sessionId, driverId, busCode);
+        log.info("Driver {} registered for {}", driverId, busCode);
 
-            activeDrivers.put(driverId, driverInfo);
-            sessionData.put(session.getId(), driverInfo);
+        send(sessionId, "driver-registered", Map.of(
+                "driverId", driverId,
+                "busId", busCode,
+                "status", "success"));
+        broadcastToUsers("new-driver-available", Map.of(
+                "driverId", driverId,
+                "busId", busCode,
+                "timestamp", System.currentTimeMillis()));
+    }
 
-            System.out.println("Driver registered: " + driverId + " with bus: " + busId);
+    private void handleDriverLocation(String sessionId, JsonNode data) {
+        JsonNode coords = data.path("coords");
+        if (!coords.isArray() || coords.size() < 2) {
+            return;
+        }
+        Optional<LiveBusDto> updated = tracking.updateDriverLocation(
+                sessionId,
+                coords.get(0).asDouble(),
+                coords.get(1).asDouble(),
+                data.hasNonNull("accuracy") ? data.get("accuracy").asDouble() : null,
+                data.hasNonNull("visible") ? data.get("visible").asBoolean() : null);
 
-            sendMessage(session, "driver-registered", Map.of(
-                    "driverId", driverId,
-                    "busId", busId,
-                    "status", "success"
-            ));
-
-             broadcastToUsers("new-driver-available", Map.of(
-                    "driverId", driverId,
-                    "busId", busId,
-                    "timestamp", System.currentTimeMillis()
-            ));
+        updated.ifPresent(dto -> {
+            send(sessionId, "location-acknowledged", Map.of(
+                    "busId", dto.busId(),
+                    "timestamp", System.currentTimeMillis()));
+            if (dto.visible()) {
+                broadcastToUsers("bus-location-update", dto);
+                broadcastToOtherDrivers("driver-location-update", dto, sessionId);
+            }
+        });
+        if (updated.isEmpty()) {
+            sendError(sessionId, "Register as a driver before sending locations");
         }
     }
 
-    private void handleDriverLocation(WebSocketSession session, JsonNode jsonNode) throws IOException {
-        JsonNode data = jsonNode.get("data");
-        if (data != null && data.has("driverId") && data.has("coords")) {
-            String driverId = data.get("driverId").asText();
-            String busId = data.has("busId") ? data.get("busId").asText() : null;
-            JsonNode coordsNode = data.get("coords");
+    private void handleUserRegister(String sessionId, JsonNode data) {
+        String userId = data.path("userId").asText("").isBlank()
+                ? "user-" + UUID.randomUUID().toString().substring(0, 8)
+                : data.get("userId").asText();
+        tracking.registerUser(sessionId, userId);
+        send(sessionId, "user-registered", Map.of("userId", userId, "status", "success"));
+        send(sessionId, "active-buses", tracking.snapshotVisibleBuses());
+    }
 
-            if (coordsNode.isArray() && coordsNode.size() >= 2) {
-                double[] coords = new double[]{
-                        coordsNode.get(0).asDouble(),
-                        coordsNode.get(1).asDouble()
-                };
+    private void handleUserLocation(String sessionId, JsonNode data) {
+        JsonNode coords = data.path("coords");
+        if (coords.isArray() && coords.size() >= 2) {
+            tracking.updateUserLocation(sessionId, coords.get(0).asDouble(), coords.get(1).asDouble());
+        }
+    }
 
-                Map<String, Object> driverInfo = activeDrivers.get(driverId);
-                if (driverInfo != null) {
-                    driverInfo.put("coords", coords);
-                    driverInfo.put("lastSeen", System.currentTimeMillis());
-                    driverInfo.put("accuracy", data.has("accuracy") ? data.get("accuracy").asDouble() : 0);
-                    driverInfo.put("visible", data.has("visible") ? data.get("visible").asBoolean() : true);
+    private void handleGetOtherDrivers(String sessionId) {
+        List<LiveBusDto> others = tracking.snapshotVisibleBuses().stream()
+                .filter(dto -> tracking.getSession(sessionId)
+                        .map(s -> !dto.busId().equals(s.getBusCode()))
+                        .orElse(true))
+                .toList();
+        send(sessionId, "other-drivers", others);
+    }
 
-                    // Update bus tracking service
-                    if (busId != null) {
-                        BusLocation busLocation = new BusLocation();
-                        busLocation.setRouteId(busId.contains("bus-1") ? "1" : "2");
-                        busLocation.setCoords(coords);
-                        busLocation.setSource("driver");
-                        busTrackingService.updateBusLocation(busId, busLocation);
-                    }
+    private void handleDriverVisibility(String sessionId, JsonNode data) {
+        tracking.getSession(sessionId)
+                .filter(s -> s.getType() == ClientType.DRIVER)
+                .ifPresent(s -> tracking.setDriverVisibility(
+                        s.getClientId(), data.path("visible").asBoolean(true)));
+    }
 
-                    System.out.println("Updated location for driver: " + driverId + " at " + Arrays.toString(coords));
+    private void handleTrackBus(String sessionId, JsonNode data) {
+        String busCode = data.path("busId").asText(null);
+        if (busCode != null) {
+            tracking.trackBus(sessionId, busCode);
+            send(sessionId, "tracking-started", Map.of("busId", busCode, "status", "success"));
+        }
+    }
 
-                    sendMessage(session, "location-acknowledged", Map.of(
-                            "driverId", driverId,
-                            "timestamp", System.currentTimeMillis()
-                    ));
+    private void handlePing(String sessionId) {
+        tracking.touch(sessionId);
+        send(sessionId, "pong", Map.of("timestamp", System.currentTimeMillis()));
+    }
 
-                     broadcastLocationUpdate(driverInfo);
-                }
+    @Override
+    public void handleTransportError(WebSocketSession session, Throwable exception) {
+        log.warn("WebSocket transport error for {}: {}", session.getId(), exception.getMessage());
+        cleanup(session.getId());
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus) {
+        cleanup(session.getId());
+    }
+
+    private void cleanup(String sessionId) {
+        sessions.remove(sessionId);
+        tracking.removeSession(sessionId).ifPresent(this::announceDeparture);
+    }
+
+    private void announceDeparture(ClientSession client) {
+        if (client.getType() == ClientType.DRIVER) {
+            log.info("Driver {} disconnected (bus {})", client.getClientId(), client.getBusCode());
+            broadcastToUsers("driver-left", Map.of(
+                    "driverId", client.getClientId(),
+                    "busId", client.getBusCode()));
+        }
+    }
+
+    // ── Scheduled maintenance ──────────────────────────────────────────
+
+    /** Push a fresh fleet snapshot and any due proximity alerts every 10s. */
+    @Scheduled(fixedRate = 10_000)
+    public void broadcastActiveBuses() {
+        List<ClientSession> users = tracking.userSessions();
+        if (users.isEmpty()) {
+            return;
+        }
+        List<LiveBusDto> snapshot = tracking.snapshotVisibleBuses();
+        if (!snapshot.isEmpty()) {
+            for (ClientSession user : users) {
+                send(user.getSessionId(), "active-buses", snapshot);
             }
         }
-    }
-
-    private void handleUserRegister(WebSocketSession session, JsonNode jsonNode) throws IOException {
-        JsonNode data = jsonNode.get("data");
-        String userId = data != null && data.has("userId") ? data.get("userId").asText() : "user_" + session.getId().substring(0, 8);
-
-        Map<String, Object> userInfo = new HashMap<>();
-        userInfo.put("sessionId", session.getId());
-        userInfo.put("userId", userId);
-        userInfo.put("coords", null);
-        userInfo.put("trackingBusId", null);
-        userInfo.put("lastSeen", System.currentTimeMillis());
-
-        activeUsers.put(userId, userInfo);
-        sessionData.put(session.getId(), userInfo);
-
-        System.out.println("User registered: " + userId);
-
-        sendMessage(session, "user-registered", Map.of(
-                "userId", userId,
-                "status", "success"
-        ));
-
-        // Send current active buses to the new user
-        sendActiveBusesToUser(session);
-    }
-
-    private void handleUserLocation(WebSocketSession session, JsonNode jsonNode) throws IOException {
-        JsonNode data = jsonNode.get("data");
-        if (data != null && data.has("coords")) {
-            JsonNode coordsNode = data.get("coords");
-            if (coordsNode.isArray() && coordsNode.size() >= 2) {
-                double[] coords = new double[]{
-                        coordsNode.get(0).asDouble(),
-                        coordsNode.get(1).asDouble()
-                };
-
-                Map<String, Object> sessionInfo = sessionData.get(session.getId());
-                if (sessionInfo != null) {
-                    sessionInfo.put("coords", coords);
-                    sessionInfo.put("lastSeen", System.currentTimeMillis());
-
-                    String userId = (String) sessionInfo.get("userId");
-                    if (userId != null && activeUsers.containsKey(userId)) {
-                        activeUsers.get(userId).put("coords", coords);
-                    }
-                }
-            }
+        for (LiveTrackingService.ProximityAlert alert : tracking.pendingProximityAlerts()) {
+            send(alert.sessionId(), "proximity-alert", Map.of(
+                    "busId", alert.busCode(),
+                    "distanceKm", Math.round(alert.distanceKm() * 100.0) / 100.0,
+                    "message", String.format("Your bus %s is %.0f m away!",
+                            alert.busCode(), alert.distanceKm() * 1000)));
         }
     }
 
-    private void handleGetActiveBuses(WebSocketSession session) throws IOException {
-        sendActiveBusesToUser(session);
-    }
-
-    private void handleGetOtherDrivers(WebSocketSession session, JsonNode jsonNode) throws IOException {
-        JsonNode data = jsonNode.get("data");
-        String requestingDriverId = data != null && data.has("driverId") ? data.get("driverId").asText() : null;
-
-        List<Map<String, Object>> otherDrivers = new ArrayList<>();
-        for (Map.Entry<String, Map<String, Object>> entry : activeDrivers.entrySet()) {
-            String driverId = entry.getKey();
-            Map<String, Object> driverInfo = entry.getValue();
-
-            if (!driverId.equals(requestingDriverId) && Boolean.TRUE.equals(driverInfo.get("visible"))) {
-                Map<String, Object> driverData = new HashMap<>();
-                driverData.put("driverId", driverId);
-                driverData.put("busId", driverInfo.get("busId"));
-                driverData.put("coords", driverInfo.get("coords"));
-                driverData.put("lastSeen", driverInfo.get("lastSeen"));
-                driverData.put("status", driverInfo.get("status"));
-                otherDrivers.add(driverData);
-            }
-        }
-
-        sendMessage(session, "other-drivers", otherDrivers);
-    }
-
-    private void handleDriverVisibility(WebSocketSession session, JsonNode jsonNode) throws IOException {
-        JsonNode data = jsonNode.get("data");
-        if (data != null && data.has("driverId")) {
-            String driverId = data.get("driverId").asText();
-            boolean visible = data.has("visible") ? data.get("visible").asBoolean() : true;
-
-            Map<String, Object> driverInfo = activeDrivers.get(driverId);
-            if (driverInfo != null) {
-                driverInfo.put("visible", visible);
-                System.out.println("Driver " + driverId + " visibility set to: " + visible);
-            }
-        }
-    }
-
-    private void handleTrackBus(WebSocketSession session, JsonNode jsonNode) throws IOException {
-        JsonNode data = jsonNode.get("data");
-        if (data != null && data.has("busId")) {
-            String busId = data.get("busId").asText();
-
-            Map<String, Object> sessionInfo = sessionData.get(session.getId());
-            if (sessionInfo != null) {
-                sessionInfo.put("trackingBusId", busId);
-
-                String userId = (String) sessionInfo.get("userId");
-                if (userId != null && activeUsers.containsKey(userId)) {
-                    activeUsers.get(userId).put("trackingBusId", busId);
-                }
-
-                sendMessage(session, "tracking-started", Map.of(
-                        "busId", busId,
-                        "status", "success"
-                ));
-            }
-        }
-    }
-
-    private void handlePing(WebSocketSession session) throws IOException {
-        sendMessage(session, "pong", Map.of("timestamp", System.currentTimeMillis()));
-    }
-
-    private void sendActiveBusesToUser(WebSocketSession session) throws IOException {
-        List<Map<String, Object>> activeBuses = new ArrayList<>();
-
-        for (Map.Entry<String, Map<String, Object>> entry : activeDrivers.entrySet()) {
-            Map<String, Object> driverInfo = entry.getValue();
-            if (Boolean.TRUE.equals(driverInfo.get("visible")) && driverInfo.get("coords") != null) {
-                Map<String, Object> busData = new HashMap<>();
-                busData.put("busId", driverInfo.get("busId"));
-                busData.put("driverId", entry.getKey());
-                busData.put("coords", driverInfo.get("coords"));
-                busData.put("lastSeen", driverInfo.get("lastSeen"));
-                busData.put("status", driverInfo.get("status"));
-                activeBuses.add(busData);
-            }
-        }
-
-        sendMessage(session, "active-buses", activeBuses);
-    }
-
-    private void broadcastLocationUpdate(Map<String, Object> driverInfo) {
-        if (!Boolean.TRUE.equals(driverInfo.get("visible"))) return;
-
-        Map<String, Object> locationData = new HashMap<>();
-        locationData.put("driverId", driverInfo.get("driverId"));
-        locationData.put("busId", driverInfo.get("busId"));
-        locationData.put("coords", driverInfo.get("coords"));
-        locationData.put("timestamp", System.currentTimeMillis());
-
-        // Broadcast to all users
-        broadcastToUsers("bus-location-update", locationData);
-
-        // Broadcast to other drivers
-        broadcastToOtherDrivers("driver-location-update", locationData, (String) driverInfo.get("driverId"));
-    }
-
-    private void broadcastToUsers(String messageType, Object data) {
-        for (Map.Entry<String, Map<String, Object>> entry : activeUsers.entrySet()) {
-            Map<String, Object> userInfo = entry.getValue();
-            String sessionId = (String) userInfo.get("sessionId");
-            WebSocketSession session = sessions.get(sessionId);
-
+    @Scheduled(fixedRate = 30_000)
+    public void evictStaleSessions() {
+        for (ClientSession stale : tracking.evictStaleSessions(STALE_SESSION_TIMEOUT_MS)) {
+            WebSocketSession session = sessions.remove(stale.getSessionId());
+            announceDeparture(stale);
             if (session != null && session.isOpen()) {
                 try {
-                    sendMessage(session, messageType, data);
-                } catch (IOException e) {
-                    System.err.println("Failed to send message to user: " + e.getMessage());
+                    session.close(CloseStatus.SESSION_NOT_RELIABLE);
+                } catch (IOException ignored) {
+                    // already gone
                 }
             }
         }
     }
 
-    private void broadcastToOtherDrivers(String messageType, Object data, String excludeDriverId) {
-        for (Map.Entry<String, Map<String, Object>> entry : activeDrivers.entrySet()) {
-            String driverId = entry.getKey();
-            if (!driverId.equals(excludeDriverId)) {
-                Map<String, Object> driverInfo = entry.getValue();
-                String sessionId = (String) driverInfo.get("sessionId");
-                WebSocketSession session = sessions.get(sessionId);
+    // ── Delivery ───────────────────────────────────────────────────────
 
-                if (session != null && session.isOpen()) {
-                    try {
-                        sendMessage(session, messageType, data);
-                    } catch (IOException e) {
-                        System.err.println("Failed to send message to driver " + driverId + ": " + e.getMessage());
-                    }
-                }
+    private void broadcastToUsers(String type, Object data) {
+        for (ClientSession user : tracking.userSessions()) {
+            send(user.getSessionId(), type, data);
+        }
+    }
+
+    private void broadcastToOtherDrivers(String type, Object data, String excludeSessionId) {
+        for (ClientSession driver : tracking.driverSessions()) {
+            if (!driver.getSessionId().equals(excludeSessionId)) {
+                send(driver.getSessionId(), type, data);
             }
         }
     }
 
-    private void sendMessage(WebSocketSession session, String type, Object data) throws IOException {
-        if (session.isOpen()) {
-            Map<String, Object> message = new HashMap<>();
-            message.put("type", type);
-            message.put("data", data);
-            String jsonMessage = objectMapper.writeValueAsString(message);
-            session.sendMessage(new TextMessage(jsonMessage));
+    private void send(String sessionId, String type, Object data) {
+        WebSocketSession session = sessions.get(sessionId);
+        if (session == null || !session.isOpen()) {
+            return;
         }
-    }
-
-    private void sendErrorMessage(WebSocketSession session, String errorMessage) {
         try {
-            sendMessage(session, "error", Map.of("message", errorMessage));
+            String payload = objectMapper.writeValueAsString(Map.of("type", type, "data", data));
+            session.sendMessage(new TextMessage(payload));
         } catch (IOException e) {
-            System.err.println("Failed to send error message: " + e.getMessage());
+            log.warn("Failed to send '{}' to {}: {}", type, sessionId, e.getMessage());
         }
     }
 
-    @Override
-    public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-        System.err.println("WebSocket transport error for session " + session.getId() + ": " + exception.getMessage());
-        cleanupSession(session);
-    }
-
-    @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus) throws Exception {
-        System.out.println("WebSocket connection closed: " + session.getId() + " - " + closeStatus);
-        cleanupSession(session);
-    }
-
-    private void cleanupSession(WebSocketSession session) {
-        sessions.remove(session.getId());
-        Map<String, Object> sessionInfo = sessionData.remove(session.getId());
-
-        if (sessionInfo != null) {
-            String driverId = (String) sessionInfo.get("driverId");
-            String userId = (String) sessionInfo.get("userId");
-
-            if (driverId != null) {
-                activeDrivers.remove(driverId);
-                // Notify users that driver left
-                broadcastToUsers("driver-left", Map.of("driverId", driverId));
-                System.out.println("Driver disconnected: " + driverId);
-            }
-
-            if (userId != null) {
-                activeUsers.remove(userId);
-                System.out.println("User disconnected: " + userId);
-            }
-        }
-    }
-
-    @Override
-    public boolean supportsPartialMessages() {
-        return false;
-    }
-
-    // Scheduled task to send active buses to users every 10 seconds
-    @Scheduled(fixedRate = 10000)
-    public void broadcastActiveBuses() {
-        if (activeUsers.isEmpty()) return;
-
-        List<Map<String, Object>> activeBuses = new ArrayList<>();
-
-        for (Map.Entry<String, Map<String, Object>> entry : activeDrivers.entrySet()) {
-            Map<String, Object> driverInfo = entry.getValue();
-            if (Boolean.TRUE.equals(driverInfo.get("visible")) && driverInfo.get("coords") != null) {
-                Map<String, Object> busData = new HashMap<>();
-                busData.put("busId", driverInfo.get("busId"));
-                busData.put("driverId", entry.getKey());
-                busData.put("coords", driverInfo.get("coords"));
-                busData.put("lastSeen", driverInfo.get("lastSeen"));
-                activeBuses.add(busData);
-            }
-        }
-
-        if (!activeBuses.isEmpty()) {
-            broadcastToUsers("active-buses", activeBuses);
-        }
-    }
-
-    // Cleanup inactive sessions every 30 seconds
-    @Scheduled(fixedRate = 30000)
-    public void cleanupInactiveSessions() {
-        long now = System.currentTimeMillis();
-        long timeout = 2 * 60 * 1000; // 2 minutes
-
-        // Clean up inactive drivers
-        activeDrivers.entrySet().removeIf(entry -> {
-            Map<String, Object> driverInfo = entry.getValue();
-            Long lastSeen = (Long) driverInfo.get("lastSeen");
-            if (lastSeen != null && (now - lastSeen) > timeout) {
-                String sessionId = (String) driverInfo.get("sessionId");
-                sessions.remove(sessionId);
-                sessionData.remove(sessionId);
-                System.out.println("Removed inactive driver: " + entry.getKey());
-                return true;
-            }
-            return false;
-        });
-
-        // Clean up inactive users
-        activeUsers.entrySet().removeIf(entry -> {
-            Map<String, Object> userInfo = entry.getValue();
-            Long lastSeen = (Long) userInfo.get("lastSeen");
-            if (lastSeen != null && (now - lastSeen) > timeout) {
-                String sessionId = (String) userInfo.get("sessionId");
-                sessions.remove(sessionId);
-                sessionData.remove(sessionId);
-                System.out.println("Removed inactive user: " + entry.getKey());
-                return true;
-            }
-            return false;
-        });
+    private void sendError(String sessionId, String message) {
+        send(sessionId, "error", Map.of("message", message));
     }
 }

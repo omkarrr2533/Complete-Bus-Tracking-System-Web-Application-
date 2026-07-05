@@ -1,0 +1,17 @@
+# Build output
+target/
+
+# Runtime data (H2 database files)
+data/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

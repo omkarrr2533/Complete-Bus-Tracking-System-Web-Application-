@@ -1,64 +1,67 @@
 package com.citybus.service;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.security.Keys;
+import com.citybus.domain.UserAccount;
+import com.citybus.dto.LoginRequest;
+import com.citybus.dto.LoginResponse;
+import com.citybus.repository.UserRepository;
+import com.citybus.security.JwtService;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import javax.crypto.SecretKey;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-
+/**
+ * Credential verification against the persisted user store (BCrypt hashes)
+ * and token issuance. Uses one generic failure message so the endpoint does
+ * not leak which usernames exist.
+ */
 @Service
 public class AuthService {
 
-    private static final String SECRET_KEY = "mySecretKeyForJWTTokenGenerationThatIsLongEnough123456789";
-    private static final int EXPIRATION_TIME = 86400000; // 24 hours in milliseconds
+    private static final String INVALID_CREDENTIALS = "Invalid username or password";
 
-    private final SecretKey key = Keys.hmacShaKeyFor(SECRET_KEY.getBytes());
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    public String generateToken(Long userId, String username, String role, String busId) {
-        Map<String, Object> claims = new HashMap<>();
-        claims.put("userId", userId);
-        claims.put("username", username);
-        claims.put("role", role);
-        claims.put("busId", busId);
-
-        return Jwts.builder()
-                .setClaims(claims)
-                .setSubject(username)
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + EXPIRATION_TIME))
-                .signWith(key, SignatureAlgorithm.HS256)
-                .compact();
+    public AuthService(UserRepository userRepository,
+                       PasswordEncoder passwordEncoder,
+                       JwtService jwtService) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
-    public Claims validateToken(String token) {
-        try {
-            return Jwts.parserBuilder()
-                    .setSigningKey(key)
-                    .build()
-                    .parseClaimsJws(token)
-                    .getBody();
-        } catch (Exception e) {
-            return null;
+    @Transactional(readOnly = true)
+    public LoginResponse login(LoginRequest request) {
+        UserAccount user = userRepository.findByUsername(request.username().trim())
+                .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS));
+        if (!user.isEnabled() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new BadCredentialsException(INVALID_CREDENTIALS);
         }
+        return new LoginResponse(
+                jwtService.issueToken(user),
+                "Bearer",
+                jwtService.getExpirationSeconds(),
+                user.getUsername(),
+                user.getDisplayName(),
+                user.getRole().name(),
+                user.getBus() == null ? null : user.getBus().getCode()
+        );
     }
 
-    public String getUsernameFromToken(String token) {
-        Claims claims = validateToken(token);
-        return claims != null ? claims.getSubject() : null;
-    }
-
-    public String getRoleFromToken(String token) {
-        Claims claims = validateToken(token);
-        return claims != null ? (String) claims.get("role") : null;
-    }
-
-    public String getBusIdFromToken(String token) {
-        Claims claims = validateToken(token);
-        return claims != null ? (String) claims.get("busId") : null;
+    @Transactional(readOnly = true)
+    public LoginResponse currentUser(String username) {
+        UserAccount user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BadCredentialsException("Unknown user"));
+        return new LoginResponse(
+                null,
+                null,
+                0,
+                user.getUsername(),
+                user.getDisplayName(),
+                user.getRole().name(),
+                user.getBus() == null ? null : user.getBus().getCode()
+        );
     }
 }

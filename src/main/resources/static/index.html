@@ -44,8 +44,12 @@
             <span class="nav-text">Contact</span>
         </a>
         <a href="/driver" class="nav-item nav-link" id="driver-login-link">
-            <i class="nav-icon fas fa-user"></i>
+            <i class="nav-icon fas fa-id-card"></i>
             <span class="nav-text">Driver Login</span>
+        </a>
+        <a href="/admin" class="nav-item nav-link" id="admin-link">
+            <i class="nav-icon fas fa-user-shield"></i>
+            <span class="nav-text">Admin Panel</span>
         </a>
     </div>
 </nav>
@@ -160,8 +164,8 @@
             </div>
             <div class="eta-stat-sep"></div>
             <div class="eta-stat-cell">
-                <div class="eta-stat-num">20</div>
-                <div class="eta-stat-lbl">km/h avg</div>
+                <div class="eta-stat-num" id="eta-speed-value">--</div>
+                <div class="eta-stat-lbl">km/h</div>
             </div>
         </div>
  
@@ -189,11 +193,6 @@
             <label for="route-filter">Filter Routes</label>
             <select id="route-filter" aria-label="Filter routes by selection">
                 <option value="all">All Routes</option>
-                <option value="1">Route 1: Ranjangaon Phata</option>
-                <option value="2">Route 2: Fame Tapadia Signal</option>
-                <option value="2">Route 2: Chikalthana</option>
-                <option value="2">Route 2: Mahalaxmi Chowk</option>
-                <option value="2">Route 2: Baliram Patil High School</option>
             </select>
         </div>
 
@@ -207,47 +206,11 @@
                     <th>Frequency</th>
                     <th>First Bus</th>
                     <th>Last Bus</th>
+                    <th>Status</th>
                 </tr>
                 </thead>
-                <tbody>
-                <tr>
-                    <td>1</td>
-                    <td>Ranjangaon Phata</td>
-                    <td>12</td>
-                    <td>15 mins</td>
-                    <td>6:00 AM</td>
-                    <td>10:00 PM</td>
-                </tr>
-                <tr>
-                    <td>2</td>
-                    <td>Fame Tapadia Signal</td>
-                    <td>16</td>
-                    <td>20 mins</td>
-                    <td>5:30 AM</td>
-                    <td>10:30 PM</td>
-                </tr>
-                <tr>
-                    <td>3</td>
-                    <td>Chikalthana</td>
-                    <td>16</td>
-                    <td>20 mins</td>
-                    <td>5:30 AM</td>
-                    <td>10:30 PM</td>
-                </tr><tr>
-                    <td>4</td>
-                    <td>Mahalaxmi Chowk</td>
-                    <td>16</td>
-                    <td>20 mins</td>
-                    <td>5:30 AM</td>
-                    <td>10:30 PM</td>
-                </tr><tr>
-                    <td>5</td>
-                    <td>Baliram Patil High School</td>
-                    <td>16</td>
-                    <td>20 mins</td>
-                    <td>5:30 AM</td>
-                    <td>10:30 PM</td>
-                </tr>
+                <tbody id="routes-table-body">
+                <!-- Populated from /api/v1/routes -->
                 </tbody>
             </table>
         </div>
@@ -260,196 +223,12 @@
             <p>Check the timetable for your preferred route and plan your journey</p>
         </div>
 
-        <div class="schedule-filters">
-            <button class="schedule-filter-btn active" data-route="all">All Routes</button>
-            <button class="schedule-filter-btn" data-route="1">Route 1</button>
-            <button class="schedule-filter-btn" data-route="2">Route 2</button>
-            <button class="schedule-filter-btn" data-route="weekday">Weekdays</button>
-            <button class="schedule-filter-btn" data-route="weekend">Weekends</button>
+        <div class="schedule-filters" id="schedule-filters">
+            <!-- Populated from /api/v1/routes -->
         </div>
 
-        <div class="schedule-container">
-            <div class="schedule-card" data-route="1">
-                <div class="schedule-header">
-                    <h3>Route 1: Ranjangaon Phata</h3>
-                    <div class="schedule-time">6:00 AM - 10:00 PM</div>
-                </div>
-                <div class="schedule-content">
-                    <ul class="schedule-stops">
-                        <li>
-                            <span class="stop-name">Ranjangaon Phata</span>
-                            <span class="stop-time">6:00 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Alphonsa</span>
-                            <span class="stop-time">6:15 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Pratap Chowk</span>
-                            <span class="stop-time">6:30 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">MIDC RD</span>
-                            <span class="stop-time">6:45 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Gollwadi Chowk</span>
-                            <span class="stop-time">7:00 AM</span>
-                        </li>
-                    </ul>
-                    <div class="route-stats">
-                        <div class="stat-item">
-                            <div class="stat-value">12</div>
-                            <div class="stat-label">Total Stops</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value">15</div>
-                            <div class="stat-label">Minutes</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value">45</div>
-                            <div class="stat-label">Buses/Day</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="schedule-card" data-route="2">
-                <div class="schedule-header">
-                    <h3>Route 2: Fame Tapadia Signal</h3>
-                    <div class="schedule-time">5:30 AM - 10:30 PM</div>
-                </div>
-                <div class="schedule-content">
-                    <ul class="schedule-stops">
-                        <li>
-                            <span class="stop-name">Fame Tapadia Signal</span>
-                            <span class="stop-time">5:30 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">N1 Ganpati</span>
-                            <span class="stop-time">5:45 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Wokhardt</span>
-                            <span class="stop-time">6:00 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Ambedkar Chowk</span>
-                            <span class="stop-time">6:15 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Jaiswal Hall</span>
-                            <span class="stop-time">6:30 AM</span>
-                        </li>
-                    </ul>
-                    <div class="route-stats">
-                        <div class="stat-item">
-                            <div class="stat-value">16</div>
-                            <div class="stat-label">Total Stops</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value">20</div>
-                            <div class="stat-label">Minutes</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value">38</div>
-                            <div class="stat-label">Buses/Day</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="schedule-card" data-route="3">
-                <div class="schedule-header">
-                    <h3>Route 3: Chikalthana</h3>
-                    <div class="schedule-time">5:30 AM - 10:30 PM</div>
-                </div>
-                <div class="schedule-content">
-                    <ul class="schedule-stops">
-                        <li>
-                            <span class="stop-name">Chikalthana</span>
-                            <span class="stop-time">5:30 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Dhoot Hospital- Ram Nagar</span>
-                            <span class="stop-time">5:45 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Akashwani</span>
-                            <span class="stop-time">6:00 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Jai Tower</span>
-                            <span class="stop-time">6:15 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Padampura</span>
-                            <span class="stop-time">6:30 AM</span>
-                        </li>
-                    </ul>
-                    <div class="route-stats">
-                        <div class="stat-item">
-                            <div class="stat-value">11</div>
-                            <div class="stat-label">Total Stops</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value">20</div>
-                            <div class="stat-label">Minutes</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value">30</div>
-                            <div class="stat-label">Buses/Day</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-
-
-            <div class="schedule-card" data-route="5">
-                <div class="schedule-header">
-                    <h3>Route 3: City Center Loop</h3>
-                    <div class="schedule-time">6:30 AM - 9:30 PM</div>
-                </div>
-                <div class="schedule-content">
-                    <ul class="schedule-stops">
-                        <li>
-                            <span class="stop-name">City Center Mall</span>
-                            <span class="stop-time">6:30 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Kranti Chowk</span>
-                            <span class="stop-time">6:45 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Mondha Naka</span>
-                            <span class="stop-time">7:00 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Hudco Corner</span>
-                            <span class="stop-time">7:15 AM</span>
-                        </li>
-                        <li>
-                            <span class="stop-name">Beed Bypass</span>
-                            <span class="stop-time">7:30 AM</span>
-                        </li>
-                    </ul>
-                    <div class="route-stats">
-                        <div class="stat-item">
-                            <div class="stat-value">14</div>
-                            <div class="stat-label">Total Stops</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value">18</div>
-                            <div class="stat-label">Minutes</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-value">42</div>
-                            <div class="stat-label">Buses/Day</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div class="schedule-container" id="schedule-container">
+            <!-- Populated from /api/v1/routes -->
         </div>
     </section>
 

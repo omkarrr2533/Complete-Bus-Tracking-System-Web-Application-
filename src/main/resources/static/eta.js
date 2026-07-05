@@ -4,10 +4,24 @@
  * Depends on: trackingMap, busMarkers, userLocation (from script.js)
  */
 
-const ETA_SPEED_KMH = 20;   // avg Aurangabad city bus speed
+const ETA_FALLBACK_SPEED_KMH = 20;   // used until the bus reports real movement
+const ETA_MIN_LIVE_SPEED_KMH = 3;    // below this the bus is basically stopped
 let etaPolyline      = null;
 let activeEtaBusId   = null;
 let activeEtaRouteId = null;
+
+/**
+ * Preferred speed source: the rolling average measured by the backend from
+ * real GPS pings (window.liveBusSpeeds, fed by script.js). Falls back to a
+ * city average when the bus is stationary or just came online.
+ */
+function etaSpeedFor(busId) {
+    const live = window.liveBusSpeeds && window.liveBusSpeeds[busId];
+    if (typeof live === 'number' && live >= ETA_MIN_LIVE_SPEED_KMH) {
+        return { speed: live, measured: true };
+    }
+    return { speed: ETA_FALLBACK_SPEED_KMH, measured: false };
+}
 
 /* ─── Geometry helpers ──────────────────────────────────────── */
 
@@ -98,10 +112,13 @@ function calculateAndShowETA(busId, routeId, busCoords) {
         return;
     }
 
-    const etaMins = Math.max(1, Math.round((distKm / ETA_SPEED_KMH) * 60));
+    const { speed, measured } = etaSpeedFor(busId);
+    const etaMins = Math.max(1, Math.round((distKm / speed) * 60));
     const sub = eta_subPath(path, busPos, userPos);
     drawETAPolyline(sub);
-    showETAPanel(busId, route.name, distKm, etaMins, '');
+    showETAPanel(busId, route.name, distKm, etaMins,
+        measured ? 'Live GPS speed' : 'Estimated speed');
+    setETASpeed(speed);
 }
 
 /* ─── Map layer ─────────────────────────────────────────────── */
@@ -160,6 +177,11 @@ function showETAPanel(busId, routeName, distKm, etaMins, statusMsg) {
     }
 }
 
+function setETASpeed(speedKmh) {
+    const el = document.getElementById('eta-speed-value');
+    if (el) el.textContent = Math.round(speedKmh);
+}
+
 // Called from script.js clearRouteSelection() and the ✕ button
 function hideETAPanel() {
     const panel = document.getElementById('eta-panel');
@@ -177,23 +199,20 @@ function hideETAPanel() {
 function triggerETA(busId, routeId) {
     let busCoords = null;
 
-    // Prefer real driver location
+    // Only real driver GPS counts — no simulated positions.
     if (typeof busMarkers !== 'undefined' && busMarkers[busId]) {
         const ll = busMarkers[busId].getLatLng();
         busCoords = [ll.lat, ll.lng];
     }
 
-    // Fallback: simulate bus at ~25% of route for demo
     if (!busCoords) {
+        // Arm the panel so the ETA appears the moment the driver comes online
+        // (refreshETAIfActive fires on every incoming GPS update).
+        activeEtaBusId   = busId;
+        activeEtaRouteId = routeId;
         const route = window.busRoutes && window.busRoutes[routeId];
-        if (route && route.path && route.path.length > 1) {
-            const idx = Math.max(0, Math.floor(route.path.length * 0.25) - 1);
-            busCoords = route.path[idx];
-        }
-    }
-
-    if (!busCoords) {
-        showETAPanel(busId, '', null, null, 'Bus location unavailable');
+        showETAPanel(busId, route ? route.name : '', null, null,
+            'Bus is offline — waiting for live GPS');
         return;
     }
 
