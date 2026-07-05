@@ -70,7 +70,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                         .requestMatchers("/api/v1/auth/me").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/routes/**", "/api/v1/buses/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/alerts/all").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/routes/**", "/api/v1/buses/**",
+                                "/api/v1/alerts", "/api/v1/journeys").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/**").hasRole("ADMIN")

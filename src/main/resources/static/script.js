@@ -23,6 +23,57 @@ async function apiGet(path) {
     return res.json();
 }
 
+// ── Occupancy presentation ──
+const OCCUPANCY_META = {
+    LOW:    { label: 'Seats available', cls: 'occupancy-low',    icon: 'fa-chair' },
+    MEDIUM: { label: 'Filling up',      cls: 'occupancy-medium', icon: 'fa-users' },
+    FULL:   { label: 'Full — standing', cls: 'occupancy-full',   icon: 'fa-users-line' }
+};
+window.liveBusOccupancy = {};
+
+function occupancyBadgeHtml(level) {
+    const meta = OCCUPANCY_META[level];
+    if (!meta) return '';
+    return `<span class="occupancy-badge ${meta.cls}"><i class="fas ${meta.icon}"></i> ${meta.label}</span>`;
+}
+
+// ── Service alerts banner ──
+function loadAlerts() {
+    apiGet('/api/v1/alerts')
+        .then(renderAlertsBanner)
+        .catch(() => { /* banner is best-effort */ });
+}
+
+function renderAlertsBanner(alerts) {
+    const banner = document.getElementById('alerts-banner');
+    if (!banner) return;
+    const dismissed = new Set(JSON.parse(sessionStorage.getItem('dismissedAlerts') || '[]'));
+    const visible = alerts.filter(a => !dismissed.has(a.id));
+    banner.innerHTML = visible.map(a => `
+        <div class="alert-strip alert-${a.severity.toLowerCase()}" data-alert-id="${a.id}">
+            <i class="fas ${a.severity === 'CRITICAL' ? 'fa-triangle-exclamation'
+                          : a.severity === 'WARNING' ? 'fa-circle-exclamation' : 'fa-circle-info'}"></i>
+            ${a.routeNumber != null ? `<span class="route-chip" style="--chip-color:${a.routeColor || 'var(--primary)'}">${a.routeNumber}</span>` : ''}
+            <div class="alert-copy">
+                <strong>${escapeHtml(a.title)}</strong>
+                <span>${escapeHtml(a.message)}</span>
+            </div>
+            <button class="alert-dismiss" aria-label="Dismiss alert" data-dismiss-alert="${a.id}">
+                <i class="fas fa-xmark"></i>
+            </button>
+        </div>`).join('');
+
+    banner.querySelectorAll('[data-dismiss-alert]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            dismissed.add(Number(btn.dataset.dismissAlert));
+            sessionStorage.setItem('dismissedAlerts', JSON.stringify([...dismissed]));
+            const strip = btn.closest('.alert-strip');
+            strip.classList.add('leaving');
+            setTimeout(() => strip.remove(), 300);
+        });
+    });
+}
+
 // ── Dark mode ──
 function initDarkModeToggle() {
     const toggle = document.getElementById('dark-mode-toggle');
@@ -395,6 +446,7 @@ async function generateBusList() {
             <div class="bus-status ${online ? 'status-active' : 'status-offline'}">
                 <i class="fas fa-circle" style="font-size:6px;"></i> ${online ? 'Live' : 'Offline'}
             </div>
+            <div class="bus-occupancy">${online ? occupancyBadgeHtml(bus.live.occupancy) : ''}</div>
             <div class="bus-next-stop">${online && bus.live.speedKmh != null
                 ? `Moving at ${bus.live.speedKmh} km/h`
                 : `Every ${busFrequency(routeId)} min from ${busFirstBus(routeId)}`}</div>
@@ -405,6 +457,9 @@ async function generateBusList() {
 
         if (online && bus.live.speedKmh != null) {
             window.liveBusSpeeds[bus.code] = bus.live.speedKmh;
+        }
+        if (online && bus.live.occupancy) {
+            window.liveBusOccupancy[bus.code] = bus.live.occupancy;
         }
 
         card.querySelector('.track-bus-btn').addEventListener('click', e => {
@@ -426,9 +481,20 @@ function busFirstBus(routeId) {
 }
 
 // ── Route display ──
+function subscribeToRoute(routeId) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            type: 'subscribe-route',
+            data: { routeNumber: routeId == null ? null : Number(routeId) }
+        }));
+    }
+}
+
 function trackBus(busId, routeId) {
     clearRouteSelection();
     showRoute(routeId);
+    subscribeToRoute(routeId);
+    showRouteLadder(routeId, busId);
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'track-bus', data: { busId } }));
     }
@@ -439,6 +505,8 @@ function trackBus(busId, routeId) {
 function selectBusRoute(routeId, busId) {
     clearRouteSelection();
     showRoute(routeId);
+    subscribeToRoute(routeId);
+    showRouteLadder(routeId, busId);
     document.querySelectorAll('.bus-card').forEach(card => {
         card.classList.toggle('selected', card.getAttribute('data-bus-id') === busId);
     });
@@ -482,7 +550,88 @@ function clearRouteSelection() {
     routeLayers = {};
     document.querySelectorAll('.bus-card').forEach(c => c.classList.remove('selected'));
     selectedBusRoute = null;
+    subscribeToRoute(null); // widen live updates back to the whole network
+    hideRouteLadder();
     if (typeof hideETAPanel === 'function') hideETAPanel();
+}
+
+// ── Live line diagram (route ladder) ──
+let ladderState = null; // { routeId, busId, stopCumKm: number[], pathTotalKm }
+
+function showRouteLadder(routeId, busId) {
+    const ladder = document.getElementById('route-ladder');
+    const route = window.busRoutes?.[routeId];
+    if (!ladder || !route || !route.stops.length) return;
+
+    const chip = document.getElementById('ladder-chip');
+    chip.textContent = routeId;
+    chip.style.setProperty('--chip-color', route.color);
+    document.getElementById('ladder-route-name').textContent = route.name;
+    document.getElementById('ladder-status').textContent = 'Waiting for a live bus…';
+
+    const body = document.getElementById('ladder-body');
+    body.innerHTML = `
+        <div class="ladder-line" style="--route-color:${route.color}"></div>
+        <div class="ladder-bus" id="ladder-bus" style="--route-color:${route.color}; display:none;">
+            <i class="fas fa-bus-simple"></i>
+        </div>` +
+        route.stops.map((stop, i) => `
+        <div class="ladder-stop" data-stop-index="${i}">
+            <span class="ladder-bead" style="--route-color:${route.color}"></span>
+            <span class="ladder-stop-name">${escapeHtml(stop.name)}</span>
+        </div>`).join('');
+
+    // Pre-compute each stop's along-path position for live interpolation
+    const stopCumKm = route.stops.map(stop =>
+        eta_cumKm(eta_routePos(stop.coords, route.path), route.path));
+    ladderState = { routeId, busId, stopCumKm };
+
+    ladder.style.display = 'flex';
+
+    // If the bus is already live, place it immediately
+    if (busId && busMarkers[busId]) {
+        const ll = busMarkers[busId].getLatLng();
+        updateLadderBusPosition(busId, [ll.lat, ll.lng]);
+    }
+}
+
+function hideRouteLadder() {
+    const ladder = document.getElementById('route-ladder');
+    if (ladder) ladder.style.display = 'none';
+    ladderState = null;
+}
+
+function updateLadderBusPosition(busId, coords) {
+    if (!ladderState || (ladderState.busId && ladderState.busId !== busId)) return;
+    const route = window.busRoutes?.[ladderState.routeId];
+    const busEl = document.getElementById('ladder-bus');
+    const body = document.getElementById('ladder-body');
+    if (!route || !busEl || !body) return;
+
+    const busKm = eta_cumKm(eta_routePos(coords, route.path), route.path);
+    const cum = ladderState.stopCumKm;
+
+    // Find the stop pair bracketing the bus, interpolate between their rows
+    let seg = 0;
+    while (seg < cum.length - 2 && busKm > cum[seg + 1]) seg++;
+    const span = cum[seg + 1] - cum[seg];
+    const t = span > 0 ? Math.max(0, Math.min(1, (busKm - cum[seg]) / span)) : 0;
+
+    const rows = body.querySelectorAll('.ladder-stop');
+    if (!rows.length) return;
+    const rowA = rows[seg].offsetTop + rows[seg].offsetHeight / 2;
+    const rowB = rows[Math.min(seg + 1, rows.length - 1)].offsetTop
+               + rows[Math.min(seg + 1, rows.length - 1)].offsetHeight / 2;
+
+    busEl.style.display = 'flex';
+    busEl.style.top = `${rowA + t * (rowB - rowA) - 11}px`;
+
+    rows.forEach((row, i) => row.classList.toggle('passed', cum[i] < busKm - 0.02));
+
+    const speed = window.liveBusSpeeds[busId];
+    document.getElementById('ladder-status').textContent =
+        `${busId.toUpperCase()} — next: ${route.stops[Math.min(seg + 1, route.stops.length - 1)].name}`
+        + (speed != null ? ` · ${speed} km/h` : '');
 }
 
 // ── Real-time bus updates ──
@@ -533,10 +682,32 @@ function updateSingleBusLocation(data) {
     if (data.coords && data.coords.length >= 2) {
         const id = data.busId;
         if (data.speedKmh != null) window.liveBusSpeeds[id] = data.speedKmh;
+        if (data.occupancy) updateBusOccupancy(id, data.occupancy);
         if (busMarkers[id]) busMarkers[id].setLatLng(data.coords);
         else updateBusLocations([data]);
         updateBusCardStatus(id, 'Live', new Date(), data.speedKmh);
+        updateLadderBusPosition(id, data.coords);
         if (typeof refreshETAIfActive === 'function') refreshETAIfActive(id, data.coords);
+    }
+}
+
+function updateBusOccupancy(busId, level) {
+    window.liveBusOccupancy[busId] = level;
+    const card = document.querySelector(`[data-bus-id="${busId}"]`);
+    const slot = card?.querySelector('.bus-occupancy');
+    if (slot) slot.innerHTML = occupancyBadgeHtml(level);
+
+    // Reflect in the ETA panel when this is the tracked bus
+    const etaLabel = document.getElementById('eta-bus-label');
+    if (etaLabel && etaLabel.textContent.toLowerCase() === busId.toLowerCase()) {
+        const row = document.getElementById('eta-occupancy-row');
+        const badge = document.getElementById('eta-occupancy-badge');
+        const meta = OCCUPANCY_META[level];
+        if (row && badge && meta) {
+            row.style.display = 'flex';
+            badge.className = `occupancy-badge ${meta.cls}`;
+            badge.innerHTML = `<i class="fas ${meta.icon}"></i> ${meta.label}`;
+        }
     }
 }
 
@@ -575,6 +746,7 @@ function handleWebSocketMessage(msg) {
     switch (msg.type) {
         case 'active-buses':        if (msg.data) updateBusLocations(msg.data); break;
         case 'bus-location-update': if (msg.data) updateSingleBusLocation(msg.data); break;
+        case 'bus-occupancy-update': if (msg.data) updateBusOccupancy(msg.data.busId, msg.data.occupancy); break;
         case 'driver-left':         if (msg.data) removeBusMarker(msg.data.busId); break;
         case 'new-driver-available': generateBusList(); break;
         case 'tracking-started':    if (msg.data) showNotification(`Now tracking ${msg.data.busId.toUpperCase()}`); break;
@@ -650,6 +822,31 @@ function integrateChatbot() {
     };
 }
 
+// ── Hero stats (count-up) ──
+function loadHeroStats() {
+    Promise.all([
+        loadBusRoutes(),
+        apiGet('/api/v1/buses/live').catch(() => [])
+    ]).then(([routes, live]) => {
+        const routeList = Object.values(routes);
+        countUp('hero-routes', routeList.length);
+        countUp('hero-stops', routeList.reduce((sum, r) => sum + r.stops.length, 0));
+        countUp('hero-live', live.length);
+    });
+}
+
+function countUp(id, target) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const duration = 900;
+    const start = performance.now();
+    (function tick(now) {
+        const t = Math.min(1, (now - start) / duration);
+        el.textContent = Math.round(target * (1 - Math.pow(1 - t, 3)));
+        if (t < 1) requestAnimationFrame(tick);
+    })(start);
+}
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
     initDarkModeToggle();
@@ -660,6 +857,12 @@ document.addEventListener('DOMContentLoaded', () => {
     checkExistingSession();
     integrateChatbot();
     loadBusRoutes();
+    loadHeroStats();
+    loadAlerts();
+    setInterval(loadAlerts, 60_000);
+
+    const ladderClose = document.getElementById('ladder-close');
+    if (ladderClose) ladderClose.addEventListener('click', hideRouteLadder);
 
     const home = document.getElementById('home');
     if (home && home.classList.contains('active')) {

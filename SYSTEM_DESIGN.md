@@ -14,8 +14,10 @@ importantly — **why** each decision was made and what its trade-offs are.
 ### Functional
 - Riders view routes, stops, schedules and **live bus positions** on a map, without signing in.
 - Riders get an **ETA** for a chosen bus and a **proximity alert** when it comes within 500 m.
-- Drivers sign in and stream GPS positions; they can hide themselves (break/off-duty).
-- Admins **create/update/delete routes and buses**; changes propagate to the rider map immediately.
+- Riders plan **door-to-door journeys** with transfers over the live route network.
+- Riders see **crowding levels** (reported by drivers) and **service alerts** (published by admins).
+- Drivers sign in, stream GPS positions, and report occupancy with one tap; they can hide themselves.
+- Admins **create/update/delete routes, buses and alerts**; changes propagate to the rider app immediately — including the journey-planner graph.
 
 ### Non-functional
 | Concern | Target | How it's met |
@@ -149,6 +151,39 @@ users ────────────┐            routes 1 ──── *
 
 ## 5. Deep dives
 
+### 5.0 Journey planner — Dijkstra over a compiled transit graph
+The route network is compiled into a directed graph: **nodes are (route, stop)
+pairs** — the same street corner served by two routes is two nodes, because
+"standing there about to board route 1" and "about to board route 3" differ
+by a transfer wait. Edges:
+- **RIDE** between consecutive stops: cost = along-polyline distance at city
+  bus speed + dwell time. Added in both directions (symmetric-service
+  assumption — the seed data stores each corridor once).
+- **TRANSFER** between stops of different routes within 400 m: walk time +
+  half the target route's headway as expected wait.
+- Virtual origin/destination nodes connect by walking (≤1.5 km) to nearby
+  stops; boarding edges also carry the headway/2 wait.
+
+Dijkstra yields the fastest plan, folded into human legs (walk → ride →
+walk…), each with drawable polyline geometry sliced from the route path. If
+plain walking beats the bus, the planner says so — it never forces a ride.
+The graph is **immutable and swapped atomically**; route mutations publish a
+Spring `RoutesChangedEvent` that drops it, and the next query rebuilds from
+committed data (an event-driven cache-invalidation pattern that keeps
+`RouteService` unaware the planner exists). Build cost is O(stops²) for
+transfer detection — milliseconds at city scale; the classic Dijkstra
+pitfall is avoided by storing the **distance at insertion time** in the
+priority queue instead of comparing against the live array.
+
+### 5.0b Occupancy + route-scoped fan-out
+Drivers report crowding (LOW/MEDIUM/FULL) over the socket; it rides along on
+every subsequent broadcast. Riders can `subscribe-route` to the route they
+are viewing, and per-ping updates then fan out **only to subscribers of that
+bus's route** — at high rider counts this divides broadcast volume by
+roughly the number of routes. Full snapshots still go to everyone every 10 s
+so overview maps stay complete. Route identity (number + color) is resolved
+once at driver registration, so the hot path never touches the database.
+
 ### 5.1 Measured-speed ETA (not a hardcoded guess)
 Every bus keeps a **ring buffer of its last 60 GPS fixes**. Speed = total
 haversine distance / total time across the buffer, ignoring sub-500 ms sample
@@ -197,8 +232,29 @@ correctness-simplicity beats fine-grained invalidation. Live positions are
 
 ## 6. Scaling story (interview material)
 
-Current scale: one JVM handles hundreds of concurrent WebSocket clients and
-dozens of buses without breaking a sweat. What changes at 100× — and what I'd do:
+### Measured, not claimed
+`tools/loadtest/LoadTest.java` (zero-dependency, JDK HttpClient + WebSocket)
+simulates the real workload shape: hundreds of rider sockets, five
+authenticated drivers streaming GPS every second, and REST workers hammering
+the routes and journey-planner endpoints. On a single laptop **running both
+the server and the load generator**, warmed up:
+
+```
+300/300 rider WebSockets connected (0 failures)
+WS broadcasts delivered : 46,800 msgs in 30 s  (~1,560 msg/s)
+GET /api/v1/routes      : 238 req/s | p50  59 ms | p95 211 ms | p99 646 ms
+GET /api/v1/journeys    : 221 req/s | p50  63 ms | p95 227 ms | p99 809 ms
+REST errors             : 0
+```
+
+Request handling runs on **virtual threads** (Java 21,
+`spring.threads.virtual.enabled=true`): each of the hundreds of concurrent
+connections costs kilobytes of heap instead of a platform-thread stack, so
+concurrency is bounded by work, not by thread-pool size.
+
+### What changes at 100×
+Current scale: one JVM comfortably serves hundreds of concurrent clients.
+Beyond that:
 
 1. **Multiple app instances** behind a load balancer:
    - The JWT layer needs nothing — stateless by design.
@@ -213,9 +269,13 @@ dozens of buses without breaking a sweat. What changes at 100× — and what I'd
 3. **Telemetry history**: if we need trip playback/analytics, pings go to an
    append-only store (TimescaleDB / S3 parquet) via an async queue — still
    never on the request path.
-4. **Push at scale**: 10 s full-fleet snapshots to every rider stop scaling at
-   ~10k concurrent riders; switch to per-route subscriptions (rider subscribes
-   to the route they're viewing) to cut fan-out by ~10×.
+4. **Push at scale**: per-route subscriptions are already implemented — a
+   rider watching route 2 only receives route 2's pings. The next step at
+   ~10k riders is moving the remaining full-fleet snapshot to per-route
+   topics as well, and sharding subscriptions across instances via pub/sub.
+5. **Journey planner**: the graph is per-instance and rebuilt from the DB, so
+   it scales horizontally for free; at metro scale (10⁵ stops) swap Dijkstra
+   for a contraction-hierarchy or RAPTOR implementation behind the same API.
 
 Trade-offs accepted at current scale (all documented on purpose):
 - In-memory live state ⇒ lost on restart (cost: one reconnect round-trip).
@@ -227,14 +287,19 @@ Trade-offs accepted at current scale (all documented on purpose):
 
 ## 7. Testing
 
-38 tests, three layers:
+50 tests, three layers:
 - **Unit**: JWT issue/parse/tamper/expiry; haversine math; ring-buffer speed
-  computation incl. GPS-jump clamping; proximity alert threshold + cooldown.
+  computation incl. GPS-jump clamping; proximity alert threshold + cooldown;
+  occupancy round-trips; route-subscription filtering.
 - **Repository/service** (`@DataJpaTest`): route CRUD, duplicate route number
-  conflicts, path validation, stop replacement on update.
+  conflicts, path validation, stop replacement on update; **journey planner**
+  — direct rides, transfers between routes, walk-only fallback, unreachable
+  → 404, graph rebuild after route change, inactive-route exclusion.
 - **Integration** (`@SpringBootTest` + MockMvc, real filter chain): login,
   anonymous read OK / anonymous write 401 / driver write 403 / admin write
   201, validation field errors, delete conflicts, pagination shape.
+- **Load** (`tools/loadtest`): 300 concurrent WS riders + REST, run manually;
+  results in §6.
 
 ---
 

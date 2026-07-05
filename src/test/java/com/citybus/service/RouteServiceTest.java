@@ -31,7 +31,7 @@ class RouteServiceTest {
 
     @BeforeEach
     void setUp() {
-        routeService = new RouteService(routeRepository, busRepository);
+        routeService = new RouteService(routeRepository, busRepository, event -> { });
     }
 
     private RouteRequest validRequest(int number) {

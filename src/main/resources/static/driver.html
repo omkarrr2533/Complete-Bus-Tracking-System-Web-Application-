@@ -109,8 +109,8 @@
                 <i class="fas fa-users"></i>
             </div>
             <div class="card-content">
-                <h3>Passengers</h3>
-                <div class="info-value" id="passenger-count">0</div>
+                <h3>Crowding Reported</h3>
+                <div class="info-value" id="occupancy-current">Not reported</div>
             </div>
         </div>
     </div>
@@ -153,6 +153,24 @@
                 </label>
                 <span class="toggle-label">Visible to Users</span>
             </div>
+        </div>
+        <div class="control-card occupancy-card">
+            <div class="control-header">
+                <i class="fas fa-users"></i>
+                <h3>How full is your bus?</h3>
+            </div>
+            <div class="occupancy-buttons" role="group" aria-label="Report crowding level">
+                <button class="occupancy-btn low" data-level="LOW">
+                    <i class="fas fa-chair"></i> Seats free
+                </button>
+                <button class="occupancy-btn medium" data-level="MEDIUM">
+                    <i class="fas fa-users"></i> Filling up
+                </button>
+                <button class="occupancy-btn full" data-level="FULL">
+                    <i class="fas fa-users-line"></i> Full
+                </button>
+            </div>
+            <div class="metric-label">One tap — riders see it instantly</div>
         </div>
     </div>
 

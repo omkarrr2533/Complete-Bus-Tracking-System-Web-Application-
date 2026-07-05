@@ -60,6 +60,9 @@
             <a href="#" class="nav-item" data-section="fleet">
                 <i class="nav-icon fas fa-bus-simple"></i><span>Fleet</span>
             </a>
+            <a href="#" class="nav-item" data-section="alerts">
+                <i class="nav-icon fas fa-bullhorn"></i><span>Alerts</span>
+            </a>
             <a href="/swagger-ui.html" target="_blank" rel="noopener" class="nav-item">
                 <i class="nav-icon fas fa-book"></i><span>API Docs</span>
             </a>
@@ -203,6 +206,38 @@
                 </div>
             </div>
         </section>
+
+        <!-- ═══ Alerts section ═══ -->
+        <section id="section-alerts" class="admin-section" style="display: none;">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-bullhorn"></i> Service alerts</h2>
+                    <button class="btn btn-small" id="add-alert-btn">
+                        <i class="fas fa-plus"></i> Publish Alert
+                    </button>
+                </div>
+                <div class="panel-body flush">
+                    <table class="data-table">
+                        <thead>
+                        <tr>
+                            <th>Severity</th>
+                            <th>Title</th>
+                            <th>Scope</th>
+                            <th>Published</th>
+                            <th>Expires</th>
+                            <th>Status</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="alerts-admin-body"></tbody>
+                    </table>
+                    <div class="empty-state" id="alerts-empty" style="display: none; border: none;">
+                        <i class="fas fa-bullhorn"></i>
+                        <p>No alerts yet. Publish one and riders see it instantly on the map site.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
     </main>
 </div>
 
@@ -313,6 +348,67 @@
         <div class="modal-footer">
             <button class="btn btn-secondary" data-close="bus-modal">Cancel</button>
             <button class="btn" id="bus-save-btn"><i class="fas fa-check"></i> Save Bus</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Alert modal ═══ -->
+<div class="modal-overlay" id="alert-modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="alert-modal-title">
+        <div class="modal-header">
+            <h3 id="alert-modal-title"><i class="fas fa-bullhorn"></i> Publish Alert</h3>
+            <button class="modal-close" data-close="alert-modal" aria-label="Close"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <form id="alert-form" novalidate>
+                <div class="form-grid">
+                    <div class="field full" data-field="title">
+                        <label>Title</label>
+                        <input type="text" name="title" maxlength="120" placeholder="e.g. Route 2 diverted via Jubilee Park" required>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field full" data-field="message">
+                        <label>Message</label>
+                        <textarea name="message" rows="3" maxlength="500"
+                                  placeholder="What riders need to know, in one or two sentences" required></textarea>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="severity">
+                        <label>Severity</label>
+                        <select name="severity">
+                            <option value="INFO">Info</option>
+                            <option value="WARNING">Warning</option>
+                            <option value="CRITICAL">Critical</option>
+                        </select>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="routeId">
+                        <label>Scope</label>
+                        <select name="routeId">
+                            <option value="">Whole network</option>
+                        </select>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="expiresAt">
+                        <label>Expires (optional)</label>
+                        <input type="datetime-local" name="expiresAt">
+                        <div class="hint">Leave empty to keep it up until deactivated</div>
+                        <div class="error-text"></div>
+                    </div>
+                    <div class="field" data-field="active">
+                        <label>Status</label>
+                        <select name="active">
+                            <option value="true">Active</option>
+                            <option value="false">Inactive</option>
+                        </select>
+                        <div class="error-text"></div>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" data-close="alert-modal">Cancel</button>
+            <button class="btn" id="alert-save-btn"><i class="fas fa-check"></i> Publish</button>
         </div>
     </div>
 </div>
