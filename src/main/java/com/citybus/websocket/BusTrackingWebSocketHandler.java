@@ -1,13 +1,20 @@
 package com.citybus.websocket;
 
+import com.citybus.domain.Bus;
+import com.citybus.domain.Route;
 import com.citybus.dto.LiveBusDto;
+import com.citybus.repository.BusRepository;
 import com.citybus.security.JwtService;
 import com.citybus.service.LiveTrackingService;
 import com.citybus.service.LiveTrackingService.ClientSession;
 import com.citybus.service.LiveTrackingService.ClientType;
+import com.citybus.service.LiveTrackingService.Occupancy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -34,11 +41,19 @@ import java.util.concurrent.ConcurrentHashMap;
  * raw session forbids.
  *
  * Protocol (JSON, {"type": ..., "data": ...}):
- *   in:  driver-register{token}, driver-location, user-register, user-location,
- *        get-active-buses, get-other-drivers, driver-visibility, track-bus, ping
+ *   in:  driver-register{token}, driver-location, driver-occupancy,
+ *        user-register, user-location, get-active-buses, get-other-drivers,
+ *        driver-visibility, track-bus, subscribe-route, ping
  *   out: connection-established, driver-registered, user-registered,
- *        active-buses, bus-location-update, location-acknowledged, other-drivers,
- *        tracking-started, driver-left, proximity-alert, pong, error
+ *        active-buses, bus-location-update, bus-occupancy-update,
+ *        location-acknowledged, other-drivers, tracking-started,
+ *        route-subscribed, driver-left, proximity-alert, pong, error
+ *
+ * Fan-out is route-aware: riders may subscribe to a single route
+ * (subscribe-route) and then only receive per-ping updates for buses on that
+ * route — at high rider counts this cuts broadcast volume roughly by the
+ * number of routes. Full snapshots (active-buses) still go to everyone every
+ * 10 s so overview maps stay complete.
  */
 @Component
 public class BusTrackingWebSocketHandler extends TextWebSocketHandler {
@@ -52,15 +67,36 @@ public class BusTrackingWebSocketHandler extends TextWebSocketHandler {
     private final LiveTrackingService tracking;
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
+    private final BusRepository busRepository;
 
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
+    private final Counter messagesIn;
+    private final Counter messagesOut;
+    private final Counter locationPings;
+
     public BusTrackingWebSocketHandler(LiveTrackingService tracking,
                                        JwtService jwtService,
-                                       ObjectMapper objectMapper) {
+                                       ObjectMapper objectMapper,
+                                       BusRepository busRepository,
+                                       MeterRegistry meterRegistry) {
         this.tracking = tracking;
         this.jwtService = jwtService;
         this.objectMapper = objectMapper;
+        this.busRepository = busRepository;
+
+        this.messagesIn = Counter.builder("citybus.ws.messages")
+                .tag("direction", "in").register(meterRegistry);
+        this.messagesOut = Counter.builder("citybus.ws.messages")
+                .tag("direction", "out").register(meterRegistry);
+        this.locationPings = Counter.builder("citybus.ws.location.pings")
+                .register(meterRegistry);
+        Gauge.builder("citybus.ws.riders", tracking, t -> t.userSessions().size())
+                .description("Connected rider sessions").register(meterRegistry);
+        Gauge.builder("citybus.ws.drivers", tracking, t -> t.driverSessions().size())
+                .description("Connected driver sessions").register(meterRegistry);
+        Gauge.builder("citybus.live.buses", tracking, t -> t.snapshotVisibleBuses().size())
+                .description("Buses broadcasting a position").register(meterRegistry);
     }
 
     @Override
@@ -76,6 +112,7 @@ public class BusTrackingWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void handleMessage(WebSocketSession rawSession, WebSocketMessage<?> message) {
         String sessionId = rawSession.getId();
+        messagesIn.increment();
         try {
             JsonNode root = objectMapper.readTree(message.getPayload().toString());
             String type = root.path("type").asText("unknown");
@@ -84,12 +121,14 @@ public class BusTrackingWebSocketHandler extends TextWebSocketHandler {
             switch (type) {
                 case "driver-register" -> handleDriverRegister(sessionId, data);
                 case "driver-location" -> handleDriverLocation(sessionId, data);
+                case "driver-occupancy" -> handleDriverOccupancy(sessionId, data);
                 case "user-register" -> handleUserRegister(sessionId, data);
                 case "user-location" -> handleUserLocation(sessionId, data);
                 case "get-active-buses" -> send(sessionId, "active-buses", tracking.snapshotVisibleBuses());
                 case "get-other-drivers" -> handleGetOtherDrivers(sessionId);
                 case "driver-visibility" -> handleDriverVisibility(sessionId, data);
                 case "track-bus" -> handleTrackBus(sessionId, data);
+                case "subscribe-route" -> handleSubscribeRoute(sessionId, data);
                 case "ping" -> handlePing(sessionId);
                 default -> sendError(sessionId, "Unknown message type: " + type);
             }
@@ -118,8 +157,14 @@ public class BusTrackingWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         String driverId = claims.get().getSubject();
-        tracking.registerDriver(sessionId, driverId, busCode);
-        log.info("Driver {} registered for {}", driverId, busCode);
+        // Resolve route identity once at registration so every subsequent
+        // broadcast can carry route number/color without touching the DB.
+        Route route = busRepository.findByCode(busCode).map(Bus::getRoute).orElse(null);
+        tracking.registerDriver(sessionId, driverId, busCode,
+                route == null ? null : route.getRouteNumber(),
+                route == null ? null : route.getColor());
+        log.info("Driver {} registered for {} (route {})", driverId, busCode,
+                route == null ? "unassigned" : route.getRouteNumber());
 
         send(sessionId, "driver-registered", Map.of(
                 "driverId", driverId,
@@ -144,17 +189,43 @@ public class BusTrackingWebSocketHandler extends TextWebSocketHandler {
                 data.hasNonNull("visible") ? data.get("visible").asBoolean() : null);
 
         updated.ifPresent(dto -> {
+            locationPings.increment();
             send(sessionId, "location-acknowledged", Map.of(
                     "busId", dto.busId(),
                     "timestamp", System.currentTimeMillis()));
             if (dto.visible()) {
-                broadcastToUsers("bus-location-update", dto);
+                broadcastToSubscribedUsers("bus-location-update", dto);
                 broadcastToOtherDrivers("driver-location-update", dto, sessionId);
             }
         });
         if (updated.isEmpty()) {
             sendError(sessionId, "Register as a driver before sending locations");
         }
+    }
+
+    private void handleDriverOccupancy(String sessionId, JsonNode data) {
+        Occupancy level;
+        try {
+            level = Occupancy.valueOf(data.path("level").asText("").toUpperCase());
+        } catch (IllegalArgumentException e) {
+            sendError(sessionId, "Occupancy level must be LOW, MEDIUM or FULL");
+            return;
+        }
+        tracking.setOccupancy(sessionId, level).ifPresentOrElse(dto -> {
+            send(sessionId, "occupancy-acknowledged", Map.of("level", level.name()));
+            if (dto.visible()) {
+                broadcastToSubscribedUsers("bus-occupancy-update", dto);
+            }
+        }, () -> sendError(sessionId, "Register as a driver before reporting occupancy"));
+    }
+
+    private void handleSubscribeRoute(String sessionId, JsonNode data) {
+        Integer routeNumber = data.hasNonNull("routeNumber")
+                ? data.get("routeNumber").asInt()
+                : null;
+        tracking.subscribeRoute(sessionId, routeNumber);
+        send(sessionId, "route-subscribed", Map.of(
+                "routeNumber", routeNumber == null ? "all" : routeNumber));
     }
 
     private void handleUserRegister(String sessionId, JsonNode data) {
@@ -274,6 +345,15 @@ public class BusTrackingWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /** Route-aware fan-out: only riders watching this bus's route get the ping. */
+    private void broadcastToSubscribedUsers(String type, LiveBusDto dto) {
+        for (ClientSession user : tracking.userSessions()) {
+            if (user.wantsRoute(dto.routeNumber())) {
+                send(user.getSessionId(), type, dto);
+            }
+        }
+    }
+
     private void broadcastToOtherDrivers(String type, Object data, String excludeSessionId) {
         for (ClientSession driver : tracking.driverSessions()) {
             if (!driver.getSessionId().equals(excludeSessionId)) {
@@ -290,6 +370,7 @@ public class BusTrackingWebSocketHandler extends TextWebSocketHandler {
         try {
             String payload = objectMapper.writeValueAsString(Map.of("type", type, "data", data));
             session.sendMessage(new TextMessage(payload));
+            messagesOut.increment();
         } catch (IOException e) {
             log.warn("Failed to send '{}' to {}: {}", type, sessionId, e.getMessage());
         }

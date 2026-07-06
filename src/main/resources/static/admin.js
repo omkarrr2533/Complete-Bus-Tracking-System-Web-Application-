@@ -10,10 +10,12 @@
 
     let routes = [];
     let buses  = [];
+    let alerts = [];
     let liveRefreshTimer = null;
     let confirmAction = null;
     let editingRouteId = null;
     let editingBusId = null;
+    let editingAlertId = null;
 
     // ── API helper ─────────────────────────────────────────────────
     async function api(path, options = {}) {
@@ -121,7 +123,8 @@
     const SECTION_META = {
         dashboard: ['Dashboard', 'Fleet overview and live operations'],
         routes:    ['Routes', 'Create, edit and retire routes — changes go live on the rider map instantly'],
-        fleet:     ['Fleet', 'Vehicles and their route assignments']
+        fleet:     ['Fleet', 'Vehicles and their route assignments'],
+        alerts:    ['Alerts', 'Service notices riders see on the map site — delays, diversions, planned works']
     };
 
     function switchSection(name) {
@@ -140,17 +143,20 @@
     // ── Data loading ───────────────────────────────────────────────
     async function loadAll() {
         try {
-            const [routesData, busPage, live] = await Promise.all([
+            const [routesData, busPage, live, alertsData] = await Promise.all([
                 api('/api/v1/routes'),
                 api('/api/v1/buses?size=100'),
-                api('/api/v1/buses/live')
+                api('/api/v1/buses/live'),
+                api('/api/v1/alerts/all')
             ]);
             routes = routesData;
             buses = busPage.content;
+            alerts = alertsData;
             renderStats(live);
             renderLiveTable(live);
             renderRoutesTable();
             renderFleetTable();
+            renderAlertsTable();
         } catch (err) {
             toast(err.message || 'Failed to load data', 'error');
         }
@@ -247,6 +253,101 @@
                     </div>
                 </td>
             </tr>`).join('');
+    }
+
+    const SEVERITY_BADGES = {
+        INFO:     'badge-muted',
+        WARNING:  'badge-warning',
+        CRITICAL: 'badge-danger'
+    };
+
+    function renderAlertsTable() {
+        const tbody = document.getElementById('alerts-admin-body');
+        const empty = document.getElementById('alerts-empty');
+        if (!tbody) return;
+        empty.style.display = alerts.length ? 'none' : 'block';
+        tbody.innerHTML = alerts.map(a => `
+            <tr class="fade-in-row">
+                <td><span class="badge ${SEVERITY_BADGES[a.severity] || 'badge-muted'}">${a.severity}</span></td>
+                <td><strong>${escapeHtml(a.title)}</strong><br><small style="color:var(--text-muted)">${escapeHtml(a.message)}</small></td>
+                <td>${a.routeNumber != null
+                    ? `<span class="route-chip" style="--chip-color:${a.routeColor || 'var(--primary)'}">${a.routeNumber}</span>`
+                    : 'Network-wide'}</td>
+                <td>${new Date(a.createdAt).toLocaleString()}</td>
+                <td>${a.expiresAt ? new Date(a.expiresAt).toLocaleString() : '—'}</td>
+                <td><span class="badge ${a.live ? 'badge-live' : 'badge-muted'}">${a.live ? 'LIVE' : (a.active ? 'Expired' : 'Inactive')}</span></td>
+                <td>
+                    <div class="actions">
+                        <button class="btn-icon" data-edit-alert="${a.id}" title="Edit alert" aria-label="Edit alert">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                        <button class="btn-icon danger" data-delete-alert="${a.id}" title="Delete alert" aria-label="Delete alert">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>`).join('');
+    }
+
+    // ── Alert form ─────────────────────────────────────────────────
+    function openAlertModal(alert) {
+        editingAlertId = alert ? alert.id : null;
+        const form = document.getElementById('alert-form');
+        form.reset();
+        clearFieldErrors(form);
+        document.getElementById('alert-modal-title').innerHTML = alert
+            ? '<i class="fas fa-bullhorn"></i> Edit Alert'
+            : '<i class="fas fa-bullhorn"></i> Publish Alert';
+
+        form.routeId.innerHTML = '<option value="">Whole network</option>' + routes.map(r =>
+            `<option value="${r.id}">Route ${r.routeNumber} — ${escapeHtml(r.name)}</option>`).join('');
+
+        if (alert) {
+            form.title.value = alert.title;
+            form.message.value = alert.message;
+            form.severity.value = alert.severity;
+            if (alert.routeId != null) form.routeId.value = alert.routeId;
+            form.active.value = String(alert.active);
+            if (alert.expiresAt) {
+                const local = new Date(alert.expiresAt);
+                local.setMinutes(local.getMinutes() - local.getTimezoneOffset());
+                form.expiresAt.value = local.toISOString().slice(0, 16);
+            }
+        }
+        openModal('alert-modal');
+    }
+
+    async function saveAlert() {
+        const form = document.getElementById('alert-form');
+        const btn = document.getElementById('alert-save-btn');
+        clearFieldErrors(form);
+
+        const payload = {
+            title: form.title.value.trim(),
+            message: form.message.value.trim(),
+            severity: form.severity.value,
+            routeId: form.routeId.value ? +form.routeId.value : null,
+            active: form.active.value === 'true',
+            expiresAt: form.expiresAt.value ? new Date(form.expiresAt.value).toISOString() : null
+        };
+
+        btn.disabled = true;
+        try {
+            if (editingAlertId) {
+                await api(`/api/v1/alerts/${editingAlertId}`, { method: 'PUT', body: JSON.stringify(payload) });
+                toast('Alert updated');
+            } else {
+                await api('/api/v1/alerts', { method: 'POST', body: JSON.stringify(payload) });
+                toast('Alert published — riders see it now');
+            }
+            closeModal('alert-modal');
+            await loadAll();
+        } catch (err) {
+            applyFieldErrors(form, err.fieldErrors);
+            if (!err.fieldErrors?.length) toast(err.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     function timeAgo(ts) {
@@ -464,7 +565,7 @@
     function initDarkMode() {
         const toggle = document.getElementById('dark-mode-toggle');
         const icon   = document.getElementById('theme-icon');
-        const saved = localStorage.getItem('theme') || 'light';
+        const saved = localStorage.getItem('theme') || 'dark';
         document.documentElement.setAttribute('data-theme', saved);
         icon.className = saved === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
         toggle.addEventListener('click', () => {
@@ -500,8 +601,10 @@
 
         document.getElementById('add-route-btn').addEventListener('click', () => openRouteModal(null));
         document.getElementById('add-bus-btn').addEventListener('click', () => openBusModal(null));
+        document.getElementById('add-alert-btn').addEventListener('click', () => openAlertModal(null));
         document.getElementById('route-save-btn').addEventListener('click', saveRoute);
         document.getElementById('bus-save-btn').addEventListener('click', saveBus);
+        document.getElementById('alert-save-btn').addEventListener('click', saveAlert);
         document.getElementById('confirm-yes').addEventListener('click', runConfirmedAction);
 
         // Close buttons + backdrop click + Escape
@@ -545,6 +648,21 @@
                     `Delete ${bus.code.toUpperCase()}? This cannot be undone.`,
                     () => api(`/api/v1/buses/${bus.id}`, { method: 'DELETE' })
                         .then(() => toast(`${bus.code.toUpperCase()} deleted`)));
+            }
+        });
+
+        document.getElementById('alerts-admin-body').addEventListener('click', e => {
+            const edit = e.target.closest('[data-edit-alert]');
+            const del  = e.target.closest('[data-delete-alert]');
+            if (edit) {
+                const alert = alerts.find(a => a.id === +edit.dataset.editAlert);
+                if (alert) openAlertModal(alert);
+            } else if (del) {
+                const alert = alerts.find(a => a.id === +del.dataset.deleteAlert);
+                if (alert) confirmDelete(
+                    `Delete the alert "${alert.title}"?`,
+                    () => api(`/api/v1/alerts/${alert.id}`, { method: 'DELETE' })
+                        .then(() => toast('Alert deleted')));
             }
         });
 

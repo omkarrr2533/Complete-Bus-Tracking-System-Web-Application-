@@ -235,6 +235,28 @@ function setupControlPanel() {
             refreshOtherDriversList();
         });
     }
+
+    setupOccupancyButtons();
+}
+
+// One-tap crowding report — riders see the badge instantly
+const OCCUPANCY_LABELS = { LOW: 'Seats free', MEDIUM: 'Filling up', FULL: 'Full' };
+
+function setupOccupancyButtons() {
+    document.querySelectorAll('.occupancy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const level = btn.dataset.level;
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                console.warn('Cannot report occupancy: not connected');
+                return;
+            }
+            ws.send(JSON.stringify({ type: 'driver-occupancy', data: { level } }));
+            document.querySelectorAll('.occupancy-btn').forEach(b =>
+                b.classList.toggle('active', b === btn));
+            const current = document.getElementById('occupancy-current');
+            if (current) current.textContent = OCCUPANCY_LABELS[level] || level;
+        });
+    });
 }
 
 // Handle visibility toggle

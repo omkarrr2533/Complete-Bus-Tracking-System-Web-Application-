@@ -31,6 +31,9 @@ public class LiveTrackingService {
 
     public enum ClientType { USER, DRIVER }
 
+    /** Crowding level reported by the driver with one tap. */
+    public enum Occupancy { LOW, MEDIUM, FULL }
+
     /** One GPS fix. */
     public record TimedPoint(double lat, double lng, long timestamp) {
     }
@@ -42,6 +45,7 @@ public class LiveTrackingService {
         private final String clientId;
         private final String busCode;          // drivers: the bus they operate
         private volatile String trackingBusCode; // riders: the bus they follow
+        private volatile Integer subscribedRouteNumber; // riders: route filter, null = all
         private volatile double[] coords;
         private volatile long lastSeen;
         private volatile long lastProximityAlert;
@@ -74,6 +78,17 @@ public class LiveTrackingService {
             return trackingBusCode;
         }
 
+        /** Route this rider is watching; null means the whole network. */
+        public Integer getSubscribedRouteNumber() {
+            return subscribedRouteNumber;
+        }
+
+        /** True if this rider should receive updates about the given route. */
+        public boolean wantsRoute(Integer routeNumber) {
+            Integer subscribed = subscribedRouteNumber;
+            return subscribed == null || routeNumber == null || subscribed.equals(routeNumber);
+        }
+
         public double[] getCoords() {
             return coords;
         }
@@ -87,14 +102,23 @@ public class LiveTrackingService {
     public static final class LiveBusState {
         private final String busCode;
         private final String driverId;
+        private final Integer routeNumber;
+        private final String routeColor;
         private final Deque<TimedPoint> recent = new ArrayDeque<>(RING_BUFFER_SIZE);
         private volatile boolean visible = true;
         private volatile Double accuracy;
         private volatile long lastSeen;
+        private volatile Occupancy occupancy;
 
         LiveBusState(String busCode, String driverId) {
+            this(busCode, driverId, null, null);
+        }
+
+        LiveBusState(String busCode, String driverId, Integer routeNumber, String routeColor) {
             this.busCode = busCode;
             this.driverId = driverId;
+            this.routeNumber = routeNumber;
+            this.routeColor = routeColor;
             this.lastSeen = System.currentTimeMillis();
         }
 
@@ -157,6 +181,14 @@ public class LiveTrackingService {
         public long getLastSeen() {
             return lastSeen;
         }
+
+        public Integer getRouteNumber() {
+            return routeNumber;
+        }
+
+        public Occupancy getOccupancy() {
+            return occupancy;
+        }
     }
 
     /** A pending "your bus is close" notification for one rider session. */
@@ -169,9 +201,14 @@ public class LiveTrackingService {
     // ── Session lifecycle ──────────────────────────────────────────────
 
     public ClientSession registerDriver(String sessionId, String driverId, String busCode) {
+        return registerDriver(sessionId, driverId, busCode, null, null);
+    }
+
+    public ClientSession registerDriver(String sessionId, String driverId, String busCode,
+                                        Integer routeNumber, String routeColor) {
         ClientSession session = new ClientSession(sessionId, ClientType.DRIVER, driverId, busCode);
         sessions.put(sessionId, session);
-        liveBuses.put(busCode, new LiveBusState(busCode, driverId));
+        liveBuses.put(busCode, new LiveBusState(busCode, driverId, routeNumber, routeColor));
         return session;
     }
 
@@ -209,8 +246,11 @@ public class LiveTrackingService {
         session.coords = new double[]{lat, lng};
         session.lastSeen = now;
 
-        LiveBusState state = liveBuses.computeIfAbsent(session.busCode,
-                code -> new LiveBusState(code, session.clientId));
+        LiveBusState state = liveBuses.get(session.busCode);
+        if (state == null) {
+            state = liveBuses.computeIfAbsent(session.busCode,
+                    code -> new LiveBusState(code, session.clientId));
+        }
         state.addPoint(lat, lng, now);
         if (accuracy != null) {
             state.accuracy = accuracy;
@@ -235,6 +275,30 @@ public class LiveTrackingService {
             session.trackingBusCode = busCode;
             session.lastSeen = System.currentTimeMillis();
         }
+    }
+
+    /** Rider narrows live updates to one route (null = whole network again). */
+    public void subscribeRoute(String sessionId, Integer routeNumber) {
+        ClientSession session = sessions.get(sessionId);
+        if (session != null && session.type == ClientType.USER) {
+            session.subscribedRouteNumber = routeNumber;
+            session.lastSeen = System.currentTimeMillis();
+        }
+    }
+
+    /** Driver's one-tap crowding report for their bus. */
+    public Optional<LiveBusDto> setOccupancy(String sessionId, Occupancy occupancy) {
+        ClientSession session = sessions.get(sessionId);
+        if (session == null || session.type != ClientType.DRIVER || session.busCode == null) {
+            return Optional.empty();
+        }
+        LiveBusState state = liveBuses.get(session.busCode);
+        if (state == null) {
+            return Optional.empty();
+        }
+        state.occupancy = occupancy;
+        session.lastSeen = System.currentTimeMillis();
+        return Optional.of(toDto(state));
     }
 
     public void setDriverVisibility(String driverId, boolean visible) {
@@ -335,7 +399,10 @@ public class LiveTrackingService {
                 state.speedKmh().map(v -> Math.round(v * 10.0) / 10.0).orElse(null),
                 state.accuracy,
                 state.isVisible(),
-                state.getLastSeen()
+                state.getLastSeen(),
+                state.occupancy == null ? null : state.occupancy.name(),
+                state.routeNumber,
+                state.routeColor
         );
     }
 }

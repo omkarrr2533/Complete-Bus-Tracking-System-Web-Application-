@@ -9,7 +9,14 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
 </head>
 <body>
 <div id="particles" class="particles"></div>
@@ -30,6 +37,10 @@
         <a href="#" class="nav-item nav-link" data-page="tracking">
             <i class="nav-icon fas fa-map-marker-alt"></i>
             <span class="nav-text">Track Bus</span>
+        </a>
+        <a href="#" class="nav-item nav-link" data-page="planner">
+            <i class="nav-icon fas fa-diagram-project"></i>
+            <span class="nav-text">Plan Journey</span>
         </a>
         <a href="#" class="nav-item nav-link" data-page="routes">
             <i class="nav-icon fas fa-route"></i>
@@ -67,15 +78,62 @@
 
 <!-- Main Content -->
 <main class="container">
+    <!-- Service alerts (visible on every page) -->
+    <div id="alerts-banner" class="alerts-banner" aria-live="polite"></div>
+
     <!-- Home Page -->
     <section id="home" class="page active">
-        <div class="hero">
-            <h1>Track Your Bus in Real-Time</h1>
-            <p>Never miss your bus again with our live tracking system for Aurangabad city buses</p>
-            <button class="btn" id="track-now-btn">
-                <i class="fas fa-location-arrow"></i>
-                Track Now
-            </button>
+        <!-- Cinematic landing: sticky hero over a WebGL night city.
+             Scrolling the 230vh stage dives the camera from an aerial view
+             down to a street-level follow-cam behind the bus. -->
+        <div class="landing-stage" id="landing-stage">
+            <div class="hero hero-transit sticky-hero" id="hero">
+                <canvas id="hero-3d" aria-hidden="true"></canvas>
+                <div class="hero-scrim" aria-hidden="true"></div>
+
+                <!-- Act 1: arrival -->
+                <div class="hero-copy hero-act act-1">
+                    <span class="hero-eyebrow"><span class="live-dot"></span> Live in Aurangabad</span>
+                    <h1>Your bus, on your map,<br>right now</h1>
+                    <p>Live GPS tracking, honest ETAs from measured speed, crowding info before you board, and door-to-door journey planning.</p>
+                    <div class="hero-actions">
+                        <button class="btn" id="track-now-btn">
+                            <i class="fas fa-location-arrow"></i>
+                            Track Now
+                        </button>
+                        <button class="btn btn-ghost" id="plan-now-btn">
+                            <i class="fas fa-diagram-project"></i>
+                            Plan a Journey
+                        </button>
+                    </div>
+                    <div class="hero-stats">
+                        <div class="hero-stat"><span class="hero-stat-num" id="hero-routes">–</span><span class="hero-stat-lbl">routes</span></div>
+                        <div class="hero-stat"><span class="hero-stat-num" id="hero-stops">–</span><span class="hero-stat-lbl">stops</span></div>
+                        <div class="hero-stat"><span class="hero-stat-num" id="hero-live">–</span><span class="hero-stat-lbl">buses live</span></div>
+                    </div>
+                </div>
+
+                <!-- Act 2: the dive — revealed mid-scroll at street level -->
+                <div class="hero-copy hero-act act-2" aria-hidden="true">
+                    <span class="act-2-kicker">RIDE ALONG</span>
+                    <h2 class="act-2-title">The whole city,<br>one departure board</h2>
+                    <p class="act-2-sub">Every vehicle broadcasts GPS, speed and crowding — straight to your map.</p>
+                </div>
+
+                <!-- Scroll hint -->
+                <div class="scroll-hint" aria-hidden="true">
+                    <span>Scroll</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+
+                <!-- Departure-board ticker -->
+                <div class="depot-ticker" aria-hidden="true">
+                    <div class="ticker-track" id="ticker-track">
+                        <span class="ticker-item">CITYBUS AURANGABAD</span>
+                        <span class="ticker-item">LIVE NETWORK FEED</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="features">
@@ -84,21 +142,28 @@
                     <i class="fas fa-map-marked-alt"></i>
                 </div>
                 <h3>Live Tracking</h3>
-                <p>See exactly where your bus is in real-time on an interactive map</p>
+                <p>Every bus broadcasts its GPS position — watch it move, with real measured speed</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i class="fas fa-diagram-project"></i>
+                </div>
+                <h3>Journey Planner</h3>
+                <p>Door-to-door plans with transfers, computed over the live route network</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <h3>Crowding Info</h3>
+                <p>Drivers report how full the bus is, so you know before it arrives</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">
                     <i class="fas fa-bell"></i>
                 </div>
                 <h3>Arrival Alerts</h3>
-                <p>Get notified when your bus is approaching your stop</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">
-                    <i class="fas fa-route"></i>
-                </div>
-                <h3>Route Planning</h3>
-                <p>Find the best route to your destination with our route planner</p>
+                <p>Get notified when your bus is within 500 m of you</p>
             </div>
         </div>
 
@@ -169,18 +234,98 @@
             </div>
         </div>
  
+        <!-- Occupancy row -->
+        <div class="eta-occupancy-row" id="eta-occupancy-row" style="display:none;">
+            <span class="occupancy-badge" id="eta-occupancy-badge"></span>
+        </div>
+
         <!-- Footer row: clock + status -->
         <div class="eta-footer-row">
             <span id="eta-clock"      class="eta-clock-txt"></span>
             <span id="eta-status-msg" class="eta-status-txt"></span>
         </div>
- 
-    </div> 
-</div> 
+
+    </div>
+
+    <!-- Live line diagram for the selected route -->
+    <aside id="route-ladder" class="route-ladder" style="display:none;" aria-label="Route line diagram">
+        <div class="ladder-header">
+            <span class="route-chip" id="ladder-chip">–</span>
+            <div class="ladder-title">
+                <strong id="ladder-route-name">Route</strong>
+                <small id="ladder-status">Waiting for a live bus…</small>
+            </div>
+            <button class="eta-close" id="ladder-close" aria-label="Close line diagram">
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                    <line x1="1.5" y1="1.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                    <line x1="9.5" y1="1.5" x2="1.5" y2="9.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+            </button>
+        </div>
+        <div class="ladder-body" id="ladder-body">
+            <!-- Stop beads rendered by script.js -->
+        </div>
+    </aside>
+</div>
 
         <h3>Available Buses</h3>
         <div class="bus-list" id="bus-list">
             <!-- Bus cards will be populated by JavaScript -->
+        </div>
+    </section>
+
+    <!-- Journey Planner Page -->
+    <section id="planner" class="page">
+        <div class="planner-hero">
+            <h2>Plan Your Journey</h2>
+            <p>Fastest door-to-door plan across the network — rides, transfers and walking, computed live</p>
+        </div>
+
+        <div class="planner-layout">
+            <div class="planner-form-card">
+                <div class="planner-form">
+                    <div class="planner-rail" aria-hidden="true">
+                        <span class="rail-dot rail-from"></span>
+                        <span class="rail-line"></span>
+                        <span class="rail-dot rail-to"></span>
+                    </div>
+                    <div class="planner-fields">
+                        <div class="planner-field">
+                            <label for="planner-from">From</label>
+                            <select id="planner-from">
+                                <option value="my-location">📍 My current location</option>
+                            </select>
+                        </div>
+                        <div class="planner-field">
+                            <label for="planner-to">To</label>
+                            <select id="planner-to">
+                                <option value="">Choose a destination stop…</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn-icon planner-swap" id="planner-swap" title="Swap origin and destination" aria-label="Swap origin and destination">
+                        <i class="fas fa-arrow-right-arrow-left"></i>
+                    </button>
+                </div>
+                <button class="btn planner-go" id="planner-go">
+                    <i class="fas fa-diagram-project"></i>
+                    Find the fastest journey
+                </button>
+                <div class="planner-hint">Tip: you can also pick any two points by clicking the map — first click sets the origin, second the destination.</div>
+            </div>
+
+            <div id="journey-result" class="journey-result" style="display:none;">
+                <div class="journey-summary" id="journey-summary">
+                    <!-- Total time / distance / transfers -->
+                </div>
+                <div class="journey-legs" id="journey-legs">
+                    <!-- Leg timeline -->
+                </div>
+            </div>
+        </div>
+
+        <div class="map-container planner-map-wrap">
+            <div id="planner-map" style="height:420px;"></div>
         </div>
     </section>
 
@@ -485,8 +630,13 @@
 </footer>
 
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
 <script src="script.js"></script>
+<script src="planner.js"></script>
 <script src="chatbot.js"></script>
 <script src="eta.js"></script>
+<script src="motion.js"></script>
+<script type="module" src="landing3d.js"></script>
 </body>
 </html>

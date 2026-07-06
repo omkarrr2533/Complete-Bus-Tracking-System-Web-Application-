@@ -14,6 +14,7 @@ import com.citybus.repository.RouteRepository;
 import com.citybus.util.GeoUtils;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,10 +34,13 @@ public class RouteService {
 
     private final RouteRepository routeRepository;
     private final BusRepository busRepository;
+    private final ApplicationEventPublisher events;
 
-    public RouteService(RouteRepository routeRepository, BusRepository busRepository) {
+    public RouteService(RouteRepository routeRepository, BusRepository busRepository,
+                        ApplicationEventPublisher events) {
         this.routeRepository = routeRepository;
         this.busRepository = busRepository;
+        this.events = events;
     }
 
     @Cacheable(value = "routes", key = "'all'")
@@ -61,7 +65,9 @@ public class RouteService {
         }
         Route route = new Route();
         applyRequest(route, request);
-        return toResponse(routeRepository.save(route));
+        RouteResponse response = toResponse(routeRepository.save(route));
+        events.publishEvent(new RoutesChangedEvent());
+        return response;
     }
 
     @CacheEvict(value = "routes", allEntries = true)
@@ -74,7 +80,9 @@ public class RouteService {
                     throw new ConflictException("Route number " + request.routeNumber() + " already exists");
                 });
         applyRequest(route, request);
-        return toResponse(routeRepository.save(route));
+        RouteResponse response = toResponse(routeRepository.save(route));
+        events.publishEvent(new RoutesChangedEvent());
+        return response;
     }
 
     @CacheEvict(value = "routes", allEntries = true)
@@ -87,6 +95,7 @@ public class RouteService {
                     + ": " + assignedBuses + " bus(es) are still assigned to it");
         }
         routeRepository.delete(route);
+        events.publishEvent(new RoutesChangedEvent());
     }
 
     Route getEntity(Long id) {

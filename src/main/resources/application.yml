@@ -26,11 +26,14 @@ spring:
       enabled: true
       path: /h2-console
 
-  cache:
-    type: caffeine
-    cache-names: routes
-    caffeine:
-      spec: maximumSize=500,expireAfterWrite=10m
+  # Cache policies are defined per-cache in CacheConfig (routes 10m, alerts 30s).
+
+  # Virtual threads (Java 21): each request gets a cheap virtual thread instead
+  # of tying up a platform-thread pool — hundreds of concurrent riders cost
+  # kilobytes each. Set to false if running on Java 17.
+  threads:
+    virtual:
+      enabled: true
 
 app:
   jwt:
