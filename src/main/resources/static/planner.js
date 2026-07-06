@@ -19,9 +19,7 @@
         if (!el) return;
 
         plannerMap = L.map('planner-map').setView([19.8762, 75.3433], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(plannerMap);
+        window.addThemedTiles(plannerMap);
 
         // Faint network underlay so users see where the buses go
         loadBusRoutes().then(routes => {

@@ -74,13 +74,13 @@ function renderAlertsBanner(alerts) {
     });
 }
 
-// ── Dark mode ──
+// ── Theme (night depot by default; paper timetable on toggle) ──
 function initDarkModeToggle() {
     const toggle = document.getElementById('dark-mode-toggle');
     const icon   = document.getElementById('theme-icon');
     if (!toggle || !icon) return;
 
-    const saved = localStorage.getItem('theme') || 'light';
+    const saved = localStorage.getItem('theme') || 'dark';
     document.documentElement.setAttribute('data-theme', saved);
     icon.className = saved === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
 
@@ -90,6 +90,37 @@ function initDarkModeToggle() {
         document.documentElement.setAttribute('data-theme', next);
         localStorage.setItem('theme', next);
         icon.className = next === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        refreshMapTiles();
+    });
+}
+
+// ── Theme-aware map tiles (dark depot ↔ paper) ──
+const TILE_THEMES = {
+    light: {
+        url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    },
+    dark: {
+        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }
+};
+const themedMaps = [];
+
+function addThemedTiles(map) {
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    const spec = TILE_THEMES[theme];
+    const layer = L.tileLayer(spec.url, { attribution: spec.attribution, maxZoom: 19 }).addTo(map);
+    themedMaps.push({ map, layer });
+}
+window.addThemedTiles = addThemedTiles; // planner.js reuses this
+
+function refreshMapTiles() {
+    const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    const spec = TILE_THEMES[theme];
+    themedMaps.forEach(entry => {
+        entry.map.removeLayer(entry.layer);
+        entry.layer = L.tileLayer(spec.url, { attribution: spec.attribution, maxZoom: 19 }).addTo(entry.map);
     });
 }
 
@@ -332,9 +363,7 @@ function initHomeMap() {
     if (!el || homeMap) return;
 
     homeMap = L.map('home-map').setView([19.8762, 75.3433], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(homeMap);
+    addThemedTiles(homeMap);
 
     loadBusRoutes().then(routes => {
         Object.values(routes).forEach(route => {
@@ -365,10 +394,7 @@ function initTrackingMap() {
     }
 
     trackingMap = L.map('tracking-map').setView([19.8762, 75.3433], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        maxZoom: 18
-    }).addTo(trackingMap);
+    addThemedTiles(trackingMap);
 
     getUserLocation();
     loadBusRoutes().then(() => generateBusList());
@@ -645,10 +671,12 @@ function updateBusLocations(busData) {
         if (busMarkers[id]) {
             busMarkers[id].setLatLng([lat, lng]);
         } else {
+            const color = bus.routeColor || '#ffc21a';
+            const label = bus.routeNumber != null ? bus.routeNumber : 'B';
             const icon = L.divIcon({
                 className: 'bus-marker',
-                html: `<div style="background:#1d4ed8;width:20px;height:20px;border-radius:50%;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;box-shadow:0 3px 10px rgba(29,78,216,0.5);">B</div>`,
-                iconSize: [26, 26], iconAnchor: [13, 13]
+                html: `<div style="background:${color};width:22px;height:22px;border-radius:7px;border:2.5px solid #fff;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;color:#fff;box-shadow:0 0 0 2px ${color}55, 0 3px 10px rgba(0,0,0,0.45);">${label}</div>`,
+                iconSize: [27, 27], iconAnchor: [13, 13]
             });
             busMarkers[id] = L.marker([lat, lng], { icon })
                 .addTo(trackingMap)
@@ -822,7 +850,7 @@ function integrateChatbot() {
     };
 }
 
-// ── Hero stats (count-up) ──
+// ── Hero stats (count-up) + departure-board ticker ──
 function loadHeroStats() {
     Promise.all([
         loadBusRoutes(),
@@ -832,7 +860,25 @@ function loadHeroStats() {
         countUp('hero-routes', routeList.length);
         countUp('hero-stops', routeList.reduce((sum, r) => sum + r.stops.length, 0));
         countUp('hero-live', live.length);
+        renderTicker(routeList, live);
     });
+}
+
+function renderTicker(routeList, live) {
+    const track = document.getElementById('ticker-track');
+    if (!track) return;
+    const items = [];
+    Object.entries(window.busRoutes || {}).forEach(([number, route]) => {
+        if (route.active) {
+            items.push(`ROUTE ${number} · ${route.name.toUpperCase()} · EVERY ${route.frequencyMinutes} MIN`);
+        }
+    });
+    items.push(live.length > 0
+        ? `${live.length} BUS${live.length === 1 ? '' : 'ES'} BROADCASTING LIVE`
+        : 'NETWORK STANDBY — NO BUSES ON AIR');
+    // Duplicate the sequence so the -50% scroll loops seamlessly
+    const spans = items.map(t => `<span class="ticker-item">${escapeHtml(t)}</span>`).join('');
+    track.innerHTML = spans + spans;
 }
 
 function countUp(id, target) {

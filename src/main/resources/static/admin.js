@@ -565,7 +565,7 @@
     function initDarkMode() {
         const toggle = document.getElementById('dark-mode-toggle');
         const icon   = document.getElementById('theme-icon');
-        const saved = localStorage.getItem('theme') || 'light';
+        const saved = localStorage.getItem('theme') || 'dark';
         document.documentElement.setAttribute('data-theme', saved);
         icon.className = saved === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
         toggle.addEventListener('click', () => {

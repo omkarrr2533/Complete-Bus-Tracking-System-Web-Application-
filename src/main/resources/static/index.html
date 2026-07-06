@@ -9,7 +9,14 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
 </head>
 <body>
 <div id="particles" class="particles"></div>
@@ -76,40 +83,57 @@
 
     <!-- Home Page -->
     <section id="home" class="page active">
-        <div class="hero hero-transit">
-            <div class="hero-copy">
-                <span class="hero-eyebrow"><span class="live-dot"></span> Live in Aurangabad</span>
-                <h1>Your bus, on your map,<br>right now</h1>
-                <p>Live GPS tracking, honest ETAs from measured speed, crowding info before you board, and door-to-door journey planning.</p>
-                <div class="hero-actions">
-                    <button class="btn" id="track-now-btn">
-                        <i class="fas fa-location-arrow"></i>
-                        Track Now
-                    </button>
-                    <button class="btn btn-ghost" id="plan-now-btn">
-                        <i class="fas fa-diagram-project"></i>
-                        Plan a Journey
-                    </button>
+        <!-- Cinematic landing: sticky hero over a WebGL night city.
+             Scrolling the 230vh stage dives the camera from an aerial view
+             down to a street-level follow-cam behind the bus. -->
+        <div class="landing-stage" id="landing-stage">
+            <div class="hero hero-transit sticky-hero" id="hero">
+                <canvas id="hero-3d" aria-hidden="true"></canvas>
+                <div class="hero-scrim" aria-hidden="true"></div>
+
+                <!-- Act 1: arrival -->
+                <div class="hero-copy hero-act act-1">
+                    <span class="hero-eyebrow"><span class="live-dot"></span> Live in Aurangabad</span>
+                    <h1>Your bus, on your map,<br>right now</h1>
+                    <p>Live GPS tracking, honest ETAs from measured speed, crowding info before you board, and door-to-door journey planning.</p>
+                    <div class="hero-actions">
+                        <button class="btn" id="track-now-btn">
+                            <i class="fas fa-location-arrow"></i>
+                            Track Now
+                        </button>
+                        <button class="btn btn-ghost" id="plan-now-btn">
+                            <i class="fas fa-diagram-project"></i>
+                            Plan a Journey
+                        </button>
+                    </div>
+                    <div class="hero-stats">
+                        <div class="hero-stat"><span class="hero-stat-num" id="hero-routes">–</span><span class="hero-stat-lbl">routes</span></div>
+                        <div class="hero-stat"><span class="hero-stat-num" id="hero-stops">–</span><span class="hero-stat-lbl">stops</span></div>
+                        <div class="hero-stat"><span class="hero-stat-num" id="hero-live">–</span><span class="hero-stat-lbl">buses live</span></div>
+                    </div>
                 </div>
-                <div class="hero-stats">
-                    <div class="hero-stat"><span class="hero-stat-num" id="hero-routes">–</span><span class="hero-stat-lbl">routes</span></div>
-                    <div class="hero-stat"><span class="hero-stat-num" id="hero-stops">–</span><span class="hero-stat-lbl">stops</span></div>
-                    <div class="hero-stat"><span class="hero-stat-num" id="hero-live">–</span><span class="hero-stat-lbl">buses live</span></div>
+
+                <!-- Act 2: the dive — revealed mid-scroll at street level -->
+                <div class="hero-copy hero-act act-2" aria-hidden="true">
+                    <span class="act-2-kicker">RIDE ALONG</span>
+                    <h2 class="act-2-title">The whole city,<br>one departure board</h2>
+                    <p class="act-2-sub">Every vehicle broadcasts GPS, speed and crowding — straight to your map.</p>
+                </div>
+
+                <!-- Scroll hint -->
+                <div class="scroll-hint" aria-hidden="true">
+                    <span>Scroll</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+
+                <!-- Departure-board ticker -->
+                <div class="depot-ticker" aria-hidden="true">
+                    <div class="ticker-track" id="ticker-track">
+                        <span class="ticker-item">CITYBUS AURANGABAD</span>
+                        <span class="ticker-item">LIVE NETWORK FEED</span>
+                    </div>
                 </div>
             </div>
-            <!-- Animated transit line -->
-            <svg class="hero-line" viewBox="0 0 520 260" fill="none" aria-hidden="true">
-                <path id="hero-route-path" d="M20 210 C 120 210, 140 60, 260 60 S 420 190, 500 120"
-                      stroke="currentColor" stroke-width="6" stroke-linecap="round" class="hero-track"/>
-                <circle r="9" class="hero-bus-dot">
-                    <animateMotion dur="9s" repeatCount="indefinite" rotate="none">
-                        <mpath href="#hero-route-path"/>
-                    </animateMotion>
-                </circle>
-                <circle cx="20"  cy="210" r="7" class="hero-stop"/>
-                <circle cx="260" cy="60"  r="7" class="hero-stop"/>
-                <circle cx="500" cy="120" r="7" class="hero-stop"/>
-            </svg>
         </div>
 
         <div class="features">
@@ -606,9 +630,13 @@
 </footer>
 
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
 <script src="script.js"></script>
 <script src="planner.js"></script>
 <script src="chatbot.js"></script>
 <script src="eta.js"></script>
+<script src="motion.js"></script>
+<script type="module" src="landing3d.js"></script>
 </body>
 </html>
