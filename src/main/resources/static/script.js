@@ -23,6 +23,36 @@ async function apiGet(path) {
     return res.json();
 }
 
+// ── Route road geometry ─────────────────────────────────────────────
+// Snapping through the sparse `path` waypoints makes OSRM take big detours
+// (a divided-road waypoint snaps to the wrong carriageway). Routing through
+// the STOPS instead yields a clean, sensible line that visibly passes through
+// every stop and clearly starts/ends at the terminals. The result is memoised
+// on the route so the ETA highlight can reuse the exact same road geometry.
+function routeStopCoords(route) {
+    return route.stops.map(s => s.coords);
+}
+
+function getRouteRoadGeom(route) {
+    if (route.roadGeomPromise) return route.roadGeomPromise;
+    const stops = routeStopCoords(route);
+    const p = (typeof window.snapToRoads === 'function')
+        ? window.snapToRoads(stops).catch(() => stops)
+        : Promise.resolve(stops);
+    route.roadGeomPromise = p.then(geom => { route.roadGeom = geom; return geom; });
+    return route.roadGeomPromise;
+}
+
+// Draw a route: instant straight line through its stops, upgraded to the
+// road-snapped geometry as soon as it resolves. Never breaks — worst case it
+// stays the stop-to-stop line.
+function drawRoutePolyline(map, route, options) {
+    const stops = routeStopCoords(route);
+    const line = L.polyline(stops, options).addTo(map);
+    getRouteRoadGeom(route).then(geom => { if (map.hasLayer(line)) line.setLatLngs(geom); });
+    return line;
+}
+
 // ── Occupancy presentation ──
 const OCCUPANCY_META = {
     LOW:    { label: 'Seats available', cls: 'occupancy-low',    icon: 'fa-chair' },
@@ -368,7 +398,7 @@ function initHomeMap() {
     loadBusRoutes().then(routes => {
         Object.values(routes).forEach(route => {
             if (!route.active) return;
-            L.polyline(route.path, { color: route.color, weight: 3, opacity: 0.6 }).addTo(homeMap);
+            drawRoutePolyline(homeMap, route, { color: route.color, weight: 3, opacity: 0.6 });
             route.stops.forEach(s => {
                 L.marker(s.coords, {
                     icon: L.divIcon({
@@ -414,7 +444,7 @@ function getUserLocation() {
             userMarker = L.marker([latitude, longitude], {
                 icon: L.divIcon({
                     className: 'user-marker',
-                    html: `<div style="background:#1d4ed8;width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 8px rgba(29,78,216,0.5);"></div>`,
+                    html: `<div style="background:#10b77f;width:16px;height:16px;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 8px rgba(16,183,127,0.55);"></div>`,
                     iconSize: [22, 22],
                     iconAnchor: [11, 11]
                 })
@@ -545,27 +575,49 @@ function showRoute(routeId) {
     const route = window.busRoutes[routeId];
     if (!route) return;
 
-    const path = L.polyline(route.path, {
-        color: route.color, weight: 4, opacity: 0.85,
-        dashArray: '8 4', lineJoin: 'round', lineCap: 'round'
-    }).addTo(trackingMap);
+    const path = drawRoutePolyline(trackingMap, route, {
+        color: route.color, weight: 5, opacity: 0.9,
+        lineJoin: 'round', lineCap: 'round'
+    });
 
     routeLayers[routeId] = { path, stops: [] };
 
+    const lastIdx = route.stops.length - 1;
     route.stops.forEach((stop, i) => {
+        const terminal = i === 0 ? 'start' : i === lastIdx ? 'end' : null;
         const m = L.marker(stop.coords, {
-            icon: L.divIcon({
-                className: 'stop-marker',
-                html: `<div style="background:${route.color};width:11px;height:11px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.25);"></div>`,
-                iconSize: [16, 16], iconAnchor: [8, 8]
-            })
+            icon: terminal ? terminalIcon(terminal, route.color) : stopDotIcon(route.color),
+            zIndexOffset: terminal ? 1000 : 0
         }).addTo(trackingMap)
-          .bindPopup(`<strong>Stop ${i + 1}: ${escapeHtml(stop.name)}</strong><br><small>${escapeHtml(route.name)}</small>`);
+          .bindPopup(`<strong>${terminal === 'start' ? '🚩 Start · ' : terminal === 'end' ? '🏁 Terminus · ' : 'Stop ' + (i + 1) + ': '}${escapeHtml(stop.name)}</strong><br><small>${escapeHtml(route.name)}</small>`);
         routeLayers[routeId].stops.push(m);
     });
 
     const group = new L.featureGroup([path]);
     trackingMap.fitBounds(group.getBounds().pad(0.15));
+}
+
+// Plain interior stop bead
+function stopDotIcon(color) {
+    return L.divIcon({
+        className: 'stop-marker',
+        html: `<div style="background:${color};width:11px;height:11px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.25);"></div>`,
+        iconSize: [16, 16], iconAnchor: [8, 8]
+    });
+}
+
+// Distinct pin for the first (start) and last (terminus) stop
+function terminalIcon(kind, color) {
+    const label = kind === 'start' ? 'A' : 'B';
+    return L.divIcon({
+        className: 'terminal-marker',
+        html: `<div style="position:relative;display:flex;align-items:center;justify-content:center;
+                    width:26px;height:26px;border-radius:50% 50% 50% 2px;transform:rotate(45deg);
+                    background:${color};border:2.5px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.4);">
+                    <span style="transform:rotate(-45deg);color:#fff;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px;">${label}</span>
+                </div>`,
+        iconSize: [26, 26], iconAnchor: [13, 24]
+    });
 }
 
 function clearRouteSelection() {
@@ -671,7 +723,7 @@ function updateBusLocations(busData) {
         if (busMarkers[id]) {
             busMarkers[id].setLatLng([lat, lng]);
         } else {
-            const color = bus.routeColor || '#ffc21a';
+            const color = bus.routeColor || '#34d399';
             const label = bus.routeNumber != null ? bus.routeNumber : 'B';
             const icon = L.divIcon({
                 className: 'bus-marker',
@@ -857,11 +909,46 @@ function loadHeroStats() {
         apiGet('/api/v1/buses/live').catch(() => [])
     ]).then(([routes, live]) => {
         const routeList = Object.values(routes);
-        countUp('hero-routes', routeList.length);
-        countUp('hero-stops', routeList.reduce((sum, r) => sum + r.stops.length, 0));
-        countUp('hero-live', live.length);
+        const nRoutes = routeList.length;
+        const nStops  = routeList.reduce((sum, r) => sum + r.stops.length, 0);
+        const nLive   = live.length;
+
+        // Hero copy stats
+        countUp('hero-routes', nRoutes);
+        countUp('hero-stops', nStops);
+        countUp('hero-live', nLive);
+
+        // Floating hero chips (plain set — they sit behind the copy)
+        setText('chip-routes', nRoutes);
+        setText('chip-stops', nStops);
+        setText('chip-live', nLive);
+
+        // Editorial stats strip + achievement grid (respect the scroll count-up)
+        setLiveStat('strip-routes', nRoutes);
+        setLiveStat('strip-stops', nStops);
+        setLiveStat('strip-live', nLive);
+        setLiveStat('ac-routes', nRoutes);
+        setLiveStat('ac-stops', nStops);
+
         renderTicker(routeList, live);
     });
+}
+
+function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+}
+
+// Feed a real value into a [data-count] tile. If the tile is already in view
+// (observer fired), count up to the real number now; otherwise leave the
+// value for emerald.js's IntersectionObserver to animate on entry.
+function setLiveStat(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.setAttribute('data-count', value);
+    if (el.classList.contains('in') && typeof window.emeraldCountTo === 'function') {
+        window.emeraldCountTo(el, value, el.getAttribute('data-suffix') || '');
+    }
 }
 
 function renderTicker(routeList, live) {
@@ -893,6 +980,75 @@ function countUp(id, target) {
     })(start);
 }
 
+// ── Nearest route (auto-assigned to the rider on load) ──────────────
+function haversineKm(lat1, lng1, lat2, lng2) {
+    const R = 6371, toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Nearest boardable stop across the whole network → its route.
+function findNearestRoute(lat, lng) {
+    let best = null;
+    Object.entries(window.busRoutes || {}).forEach(([routeNumber, route]) => {
+        if (!route.active) return;
+        route.stops.forEach(stop => {
+            const km = haversineKm(lat, lng, stop.coords[0], stop.coords[1]);
+            if (!best || km < best.km) best = { routeNumber, route, stop, km };
+        });
+    });
+    return best;
+}
+
+function initNearestRoute() {
+    const box = document.getElementById('nearest-route');
+    if (!box || !navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(pos => {
+        userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        loadBusRoutes().then(() => {
+            const near = findNearestRoute(userLocation.lat, userLocation.lng);
+            if (!near) return;
+            window.userNearestRoute = near;
+            renderNearestRoute(near);
+        });
+    }, () => { /* denied — the card simply stays hidden */ },
+    { enableHighAccuracy: true, timeout: 9000, maximumAge: 60000 });
+}
+
+function renderNearestRoute(near) {
+    const box = document.getElementById('nearest-route');
+    if (!box) return;
+    const walkMin = Math.max(1, Math.round(near.km / 4.5 * 60));
+    const metres = near.km < 1 ? `${Math.round(near.km * 1000)} m` : `${near.km.toFixed(1)} km`;
+    box.innerHTML = `
+        <div class="nr-badge"><span class="live-dot"></span> Assigned to you</div>
+        <div class="nr-main">
+            <div class="nr-icon"><i class="fas fa-location-crosshairs"></i></div>
+            <div class="nr-copy">
+                <div class="nr-title">Your nearest route is
+                    <span class="route-chip" style="--chip-color:${near.route.color}">${near.routeNumber}</span>
+                    ${escapeHtml(near.route.name)}
+                </div>
+                <div class="nr-meta">Board at <strong>${escapeHtml(near.stop.name)}</strong>
+                    · ${metres} away · ~${walkMin} min walk · every ${near.route.frequencyMinutes} min</div>
+            </div>
+        </div>
+        <div class="nr-actions">
+            <button class="btn btn-small" id="nr-track"><i class="fas fa-map-marker-alt"></i> Track this route</button>
+            <button class="btn btn-outline btn-small" id="nr-plan"><i class="fas fa-diagram-project"></i> Plan from here</button>
+        </div>`;
+    box.style.display = '';
+
+    document.getElementById('nr-track').addEventListener('click', () => {
+        switchToPage('tracking');
+        setTimeout(() => selectBusRoute(near.routeNumber, null), 400);
+    });
+    document.getElementById('nr-plan').addEventListener('click', () => switchToPage('planner'));
+}
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
     initDarkModeToggle();
@@ -905,6 +1061,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadBusRoutes();
     loadHeroStats();
     loadAlerts();
+    initNearestRoute();
     setInterval(loadAlerts, 60_000);
 
     const ladderClose = document.getElementById('ladder-close');

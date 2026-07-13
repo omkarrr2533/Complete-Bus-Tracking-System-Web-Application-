@@ -28,27 +28,27 @@ function init(canvas) {
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0e18);
-    scene.fog = new THREE.Fog(0x0a0e18, 18, 46);
+    scene.background = new THREE.Color(0x050807);
+    scene.fog = new THREE.Fog(0x050807, 18, 46);
 
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 120);
 
-    // ── Lighting: moonlight + depot accents ───────────────────────────
-    scene.add(new THREE.AmbientLight(0x2a3450, 1.4));
-    const moon = new THREE.DirectionalLight(0x8fa3d0, 0.9);
+    // ── Lighting: moonlight + emerald depot accents ───────────────────
+    scene.add(new THREE.AmbientLight(0x223a30, 1.4));
+    const moon = new THREE.DirectionalLight(0x8fb8a6, 0.9);
     moon.position.set(-10, 16, 6);
     scene.add(moon);
-    const yellowGlow = new THREE.PointLight(0xffc21a, 30, 26, 2);
-    yellowGlow.position.set(6, 4, -4);
-    scene.add(yellowGlow);
-    const tealGlow = new THREE.PointLight(0x2dd4a7, 22, 24, 2);
-    tealGlow.position.set(-7, 3, 5);
-    scene.add(tealGlow);
+    const emeraldGlow = new THREE.PointLight(0x10b77f, 32, 26, 2);
+    emeraldGlow.position.set(6, 4, -4);
+    scene.add(emeraldGlow);
+    const mintGlow = new THREE.PointLight(0x34d399, 22, 24, 2);
+    mintGlow.position.set(-7, 3, 5);
+    scene.add(mintGlow);
 
     // ── Ground ─────────────────────────────────────────────────────────
     const ground = new THREE.Mesh(
         new THREE.CircleGeometry(60, 48),
-        new THREE.MeshLambertMaterial({ color: 0x0d1322 }));
+        new THREE.MeshLambertMaterial({ color: 0x081310 }));
     ground.rotation.x = -Math.PI / 2;
     scene.add(ground);
 
@@ -64,11 +64,11 @@ function init(canvas) {
     ], true, 'catmullrom', 0.6);
 
     // Asphalt ribbon under the glow line
-    scene.add(ribbonAlongCurve(curve, 1.5, 0x161d30, 0.015));
+    scene.add(ribbonAlongCurve(curve, 1.5, 0x11201a, 0.015));
     // Glowing route line — the network, made physical
     const routeGlow = new THREE.Mesh(
         new THREE.TubeGeometry(curve, 220, 0.07, 8, true),
-        new THREE.MeshBasicMaterial({ color: 0xffc21a, transparent: true, opacity: 0.85 }));
+        new THREE.MeshBasicMaterial({ color: 0x34d399, transparent: true, opacity: 0.9 }));
     routeGlow.position.y = 0.03;
     scene.add(routeGlow);
 
@@ -94,7 +94,7 @@ function init(canvas) {
         const w = 0.9 + Math.random() * 1.1;
         m.makeScale(w, h, w).setPosition(px, 0, pz);
         buildings.setMatrixAt(i, m);
-        shade.setHSL(0.62 + Math.random() * 0.04, 0.28, 0.10 + Math.random() * 0.07);
+        shade.setHSL(0.42 + Math.random() * 0.05, 0.30, 0.09 + Math.random() * 0.07);
         buildings.setColorAt(i, shade);
     });
     scene.add(buildings);
@@ -102,8 +102,8 @@ function init(canvas) {
     // ── City lights: a bokeh of lit windows ───────────────────────────
     const lightPositions = [];
     const lightColors = [];
-    const windowPalette = [new THREE.Color(0xffc21a), new THREE.Color(0xffe9b0),
-                           new THREE.Color(0x2dd4a7), new THREE.Color(0x9fb6ff)];
+    const windowPalette = [new THREE.Color(0x34d399), new THREE.Color(0x10b77f),
+                           new THREE.Color(0xa7f3d0), new THREE.Color(0xe9fff6)];
     spots.forEach(([px, pz]) => {
         const count = Math.random() < 0.55 ? Math.floor(Math.random() * 4) : 0;
         for (let k = 0; k < count; k++) {
@@ -310,21 +310,21 @@ function buildBus() {
 
     const body = new THREE.Mesh(
         new THREE.BoxGeometry(0.62, 0.5, 1.5),
-        new THREE.MeshStandardMaterial({ color: 0xffc21a, roughness: 0.4, metalness: 0.15 }));
+        new THREE.MeshStandardMaterial({ color: 0x10b77f, roughness: 0.4, metalness: 0.15 }));
     body.position.y = 0.14;
     group.add(body);
 
     const glass = new THREE.Mesh(
         new THREE.BoxGeometry(0.64, 0.16, 1.28),
         new THREE.MeshStandardMaterial({
-            color: 0x0f2b33, roughness: 0.1, metalness: 0.4,
-            emissive: 0x2dd4a7, emissiveIntensity: 0.55 }));
+            color: 0x06231a, roughness: 0.1, metalness: 0.4,
+            emissive: 0x34d399, emissiveIntensity: 0.6 }));
     glass.position.y = 0.24;
     group.add(glass);
 
     const roofSign = new THREE.Mesh(
         new THREE.BoxGeometry(0.3, 0.08, 0.14),
-        new THREE.MeshBasicMaterial({ color: 0xffe9b0 }));
+        new THREE.MeshBasicMaterial({ color: 0xd1fae5 }));
     roofSign.position.set(0, 0.44, 0.55);
     group.add(roofSign);
 
