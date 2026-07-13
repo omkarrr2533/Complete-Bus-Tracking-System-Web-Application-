@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
     <script type="importmap">
     {
         "imports": {
@@ -21,14 +21,12 @@
 <body>
 <div id="particles" class="particles"></div>
 
-<!-- Dark Mode Toggle -->
-<button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
-    <i class="fas fa-moon" id="theme-icon"></i>
-</button>
+<!-- Emerald scroll-progress bar (fills as you move down) -->
+<div class="scroll-progress" id="scroll-progress"></div>
 
-<!-- Vertical Taskbar -->
+<!-- Sticky glassmorphic top navbar -->
 <nav class="vertical-taskbar">
-    <div class="taskbar-logo">CityBus</div>
+    <div class="taskbar-logo">City<span style="font-style:normal;color:var(--primary)">Bus</span></div>
     <div class="nav-menu">
         <a href="#" class="nav-item nav-link active" data-page="home">
             <i class="nav-icon fas fa-home"></i>
@@ -36,11 +34,11 @@
         </a>
         <a href="#" class="nav-item nav-link" data-page="tracking">
             <i class="nav-icon fas fa-map-marker-alt"></i>
-            <span class="nav-text">Track Bus</span>
+            <span class="nav-text">Track</span>
         </a>
         <a href="#" class="nav-item nav-link" data-page="planner">
             <i class="nav-icon fas fa-diagram-project"></i>
-            <span class="nav-text">Plan Journey</span>
+            <span class="nav-text">Plan</span>
         </a>
         <a href="#" class="nav-item nav-link" data-page="routes">
             <i class="nav-icon fas fa-route"></i>
@@ -56,25 +54,25 @@
         </a>
         <a href="/driver" class="nav-item nav-link" id="driver-login-link">
             <i class="nav-icon fas fa-id-card"></i>
-            <span class="nav-text">Driver Login</span>
+            <span class="nav-text">Driver</span>
         </a>
         <a href="/admin" class="nav-item nav-link" id="admin-link">
             <i class="nav-icon fas fa-user-shield"></i>
-            <span class="nav-text">Admin Panel</span>
+            <span class="nav-text">Admin</span>
         </a>
     </div>
-</nav>
-
-<!-- Header -->
-<header class="header-container">
-    <div class="logo">City<span>Bus</span> Tracker</div>
-    <div class="user-info" id="user-info" style="display: none;">
-        <div class="user-status">
-            <span id="user-status-text">Guest</span>
-            <button id="logout-btn" class="logout-btn" style="display: none;">Logout</button>
+    <div class="nav-actions">
+        <div class="user-info" id="user-info" style="display: none;">
+            <div class="user-status">
+                <span id="user-status-text">Guest</span>
+                <button id="logout-btn" class="logout-btn" style="display: none;">Logout</button>
+            </div>
         </div>
+        <button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
+            <i class="fas fa-moon" id="theme-icon"></i>
+        </button>
     </div>
-</header>
+</nav>
 
 <!-- Main Content -->
 <main class="container">
@@ -93,8 +91,8 @@
 
                 <!-- Act 1: arrival -->
                 <div class="hero-copy hero-act act-1">
-                    <span class="hero-eyebrow"><span class="live-dot"></span> Live in Aurangabad</span>
-                    <h1>Your bus, on your map,<br>right now</h1>
+                    <span class="hero-eyebrow"><span class="live-dot"></span> Live in Aurangabad · Real-time transit</span>
+                    <h1>Your bus, on your map,<br><em>right&nbsp;now</em>.</h1>
                     <p>Live GPS tracking, honest ETAs from measured speed, crowding info before you board, and door-to-door journey planning.</p>
                     <div class="hero-actions">
                         <button class="btn" id="track-now-btn">
@@ -113,11 +111,19 @@
                     </div>
                 </div>
 
+                <!-- Floating stat chips around the scene -->
+                <div class="hero-chips" aria-hidden="true">
+                    <div class="hero-chip c1"><i class="fas fa-route"></i><div><div class="chip-num" id="chip-routes">–</div><div class="chip-lbl">Routes</div></div></div>
+                    <div class="hero-chip c2"><i class="fas fa-location-dot"></i><div><div class="chip-num" id="chip-stops">–</div><div class="chip-lbl">Stops</div></div></div>
+                    <div class="hero-chip c3"><i class="fas fa-bus"></i><div><div class="chip-num" id="chip-live">–</div><div class="chip-lbl">Live now</div></div></div>
+                    <div class="hero-chip c4"><i class="fas fa-signal"></i><div><div class="chip-num">30s</div><div class="chip-lbl">Refresh</div></div></div>
+                </div>
+
                 <!-- Act 2: the dive — revealed mid-scroll at street level -->
                 <div class="hero-copy hero-act act-2" aria-hidden="true">
                     <span class="act-2-kicker">RIDE ALONG</span>
-                    <h2 class="act-2-title">The whole city,<br>one departure board</h2>
-                    <p class="act-2-sub">Every vehicle broadcasts GPS, speed and crowding — straight to your map.</p>
+                    <h2 class="act-2-title">The whole city,<br>one <em>living</em> map</h2>
+                    <p class="act-2-sub">Every vehicle broadcasts GPS, speed and crowding — straight to your screen.</p>
                 </div>
 
                 <!-- Scroll hint -->
@@ -136,40 +142,143 @@
             </div>
         </div>
 
-        <div class="features">
-            <div class="feature-card">
-                <div class="feature-icon">
-                    <i class="fas fa-map-marked-alt"></i>
-                </div>
-                <h3>Live Tracking</h3>
-                <p>Every bus broadcasts its GPS position — watch it move, with real measured speed</p>
+        <!-- Nearest route (auto-assigned from the rider's location on load) -->
+        <div id="nearest-route" class="nearest-route" style="display:none;"></div>
+
+        <!-- Horizontal animated stats strip -->
+        <div class="stats-strip reveal-up">
+            <div class="strip-cell"><div class="strip-num" id="strip-routes" data-count="0">0</div><div class="strip-lbl">Active routes</div></div>
+            <div class="strip-cell"><div class="strip-num" id="strip-stops" data-count="0">0</div><div class="strip-lbl">Stops mapped</div></div>
+            <div class="strip-cell"><div class="strip-num" id="strip-live" data-count="0">0</div><div class="strip-lbl">Buses live</div></div>
+            <div class="strip-cell"><div class="strip-num" data-count="30" data-suffix="s">30s</div><div class="strip-lbl">Refresh rate</div></div>
+        </div>
+
+        <!-- What CityBus does — project-style feature cards -->
+        <div class="section-block">
+            <div class="section-head reveal-up">
+                <span class="section-eyebrow">What it does</span>
+                <h2 class="title-brighten">Everything you need to <em>catch your bus</em></h2>
+                <p>Four capabilities, one restrained interface — built on a live route network and a real-time vehicle feed.</p>
             </div>
-            <div class="feature-card">
-                <div class="feature-icon">
-                    <i class="fas fa-diagram-project"></i>
+            <div class="features">
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-map-marked-alt"></i></div>
+                    <h3>Live Tracking</h3>
+                    <p>Every bus broadcasts its GPS position — watch it move, with real measured speed.</p>
+                    <div class="feature-metric"><b>±50m</b> accuracy</div>
+                    <div class="feature-tags"><span>GPS</span><span>WebSocket</span><span>Leaflet</span></div>
                 </div>
-                <h3>Journey Planner</h3>
-                <p>Door-to-door plans with transfers, computed over the live route network</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">
-                    <i class="fas fa-users"></i>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-diagram-project"></i></div>
+                    <h3>Journey Planner</h3>
+                    <p>Door-to-door plans with transfers, computed live over the whole route network.</p>
+                    <div class="feature-metric"><b>&lt;1s</b> to route</div>
+                    <div class="feature-tags"><span>Graph</span><span>Transfers</span><span>Walk-legs</span></div>
                 </div>
-                <h3>Crowding Info</h3>
-                <p>Drivers report how full the bus is, so you know before it arrives</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">
-                    <i class="fas fa-bell"></i>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-users"></i></div>
+                    <h3>Crowding Info</h3>
+                    <p>Drivers report how full the bus is, so you know whether you'll get a seat before it arrives.</p>
+                    <div class="feature-metric"><b>3</b> crowd levels</div>
+                    <div class="feature-tags"><span>Driver-fed</span><span>Live push</span></div>
                 </div>
-                <h3>Arrival Alerts</h3>
-                <p>Get notified when your bus is within 500 m of you</p>
+                <div class="feature-card">
+                    <div class="feature-icon"><i class="fas fa-bell"></i></div>
+                    <h3>Arrival Alerts</h3>
+                    <p>Get a heads-up the moment your bus comes within 500 m of where you're standing.</p>
+                    <div class="feature-metric"><b>500m</b> proximity</div>
+                    <div class="feature-tags"><span>Geofence</span><span>Push</span></div>
+                </div>
             </div>
         </div>
 
-        <div class="map-section">
-            <h2><i class="fas fa-globe-americas"></i> Live Bus Locations</h2>
-            <div id="home-map" class="map-container"></div>
+        <!-- Featured achievement card with inner stat grid -->
+        <div class="achievement-card reveal-up">
+            <div class="achievement-copy">
+                <span class="badge-featured"><i class="fas fa-bolt"></i> Live Network</span>
+                <h3>One city, broadcasting itself in real time</h3>
+                <p>Buses stream position, speed and crowding every few seconds. Riders see the same truth the operations desk does — no guessing, no stale timetables.</p>
+            </div>
+            <div class="achievement-grid">
+                <div class="ac-cell"><div class="ac-num" id="ac-routes" data-count="0">0</div><div class="ac-lbl">Routes on air</div></div>
+                <div class="ac-cell"><div class="ac-num" id="ac-stops" data-count="0">0</div><div class="ac-lbl">Stops served</div></div>
+                <div class="ac-cell"><div class="ac-num" data-count="98" data-suffix="%">98%</div><div class="ac-lbl">Uptime</div></div>
+                <div class="ac-cell"><div class="ac-num" data-count="24" data-suffix="/7">24/7</div><div class="ac-lbl">Coverage</div></div>
+            </div>
+        </div>
+
+        <!-- Live map -->
+        <div class="section-block">
+            <div class="section-head reveal-up">
+                <span class="section-eyebrow">On the map</span>
+                <h2 class="title-brighten">Live bus <em>locations</em></h2>
+            </div>
+            <div class="map-section">
+                <div id="home-map" class="map-container"></div>
+            </div>
+        </div>
+
+        <!-- How it works — timeline -->
+        <div class="section-block">
+            <div class="section-head reveal-up">
+                <span class="section-eyebrow">How it works</span>
+                <h2 class="title-brighten">From the depot to <em>your pocket</em></h2>
+            </div>
+            <div class="timeline reveal-up">
+                <div class="timeline-item">
+                    <div class="tl-step">Step 01 · Broadcast</div>
+                    <h4>The bus goes on air</h4>
+                    <p>Each driver's device streams GPS coordinates and measured speed over a persistent WebSocket the moment a shift starts.</p>
+                </div>
+                <div class="timeline-item">
+                    <div class="tl-step">Step 02 · Fan-out</div>
+                    <h4>The server routes it, route-scoped</h4>
+                    <p>Positions are matched to routes and fanned out only to riders watching that line — keeping the live feed lean.</p>
+                </div>
+                <div class="timeline-item">
+                    <div class="tl-step">Step 03 · Arrive</div>
+                    <h4>You get an honest ETA</h4>
+                    <p>Your map interpolates the bus along the line and computes minutes-to-arrival from real speed, not a fixed schedule.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Platform capabilities matrix -->
+        <div class="section-block">
+            <div class="section-head reveal-up">
+                <span class="section-eyebrow">Under the hood</span>
+                <h2 class="title-brighten">Platform <em>capabilities</em></h2>
+            </div>
+            <div class="capability-matrix reveal-up">
+                <div class="cap-row"><div class="cap-label">Real-time</div><div class="cap-pills"><span>Live GPS</span><span>Measured speed</span><span>WebSocket fan-out</span><span>30s refresh</span></div></div>
+                <div class="cap-row"><div class="cap-label">Routing</div><div class="cap-pills"><span>Door-to-door</span><span>Transfers</span><span>Walk legs</span><span>Route ladder</span></div></div>
+                <div class="cap-row"><div class="cap-label">Rider info</div><div class="cap-pills"><span>Crowding</span><span>Arrival alerts</span><span>Service alerts</span><span>Schedules</span></div></div>
+                <div class="cap-row"><div class="cap-label">Operations</div><div class="cap-pills"><span>Driver panel</span><span>Admin CRUD</span><span>Fleet status</span><span>Occupancy</span></div></div>
+                <div class="cap-row"><div class="cap-label">Stack</div><div class="cap-pills"><span>Spring Boot 3</span><span>Leaflet</span><span>Three.js</span><span>GSAP</span></div></div>
+            </div>
+        </div>
+
+        <!-- About + meta chips -->
+        <div class="section-block">
+            <div class="section-head reveal-up">
+                <span class="section-eyebrow">About</span>
+                <h2 class="title-brighten">Built for <em>Aurangabad</em>, one honest map</h2>
+                <p>CityBus Tracker replaces printed timetables and guesswork with a single, calm interface that shows exactly where every bus is and when it will reach you.</p>
+            </div>
+            <div class="meta-chips reveal-up">
+                <span class="meta-chip"><i class="fas fa-location-dot"></i> Aurangabad, Maharashtra</span>
+                <span class="meta-chip"><i class="fas fa-clock"></i> 06:00 – 23:00 daily</span>
+                <span class="meta-chip"><i class="fas fa-code-branch"></i> Spring Boot · WebSocket</span>
+                <span class="meta-chip"><i class="fas fa-mobile-screen"></i> PWA · installable</span>
+            </div>
+        </div>
+
+        <!-- Contact CTA -->
+        <div class="contact-cta reveal-up">
+            <span class="section-eyebrow" style="justify-content:center">Get in touch</span>
+            <h2>Let's keep the city <em>moving</em>.</h2>
+            <p>Questions, feedback, or an operator who wants their fleet on the map?</p>
+            <a class="cta-email" href="mailto:info@citybusaurangabad.com"><i class="fas fa-envelope"></i> info@citybusaurangabad.com</a>
         </div>
     </section>
 
@@ -579,6 +688,13 @@
 <!-- Footer -->
 <footer>
     <div class="container">
+        <!-- CTA banner -->
+        <div class="footer-cta">
+            <span class="section-eyebrow" style="justify-content:center">Ready when you are</span>
+            <h2>Never miss a bus <em>again</em>.</h2>
+            <p>Open the live map and watch your route move in real time.</p>
+            <button class="btn" data-page="tracking"><i class="fas fa-location-arrow"></i> Track a bus now</button>
+        </div>
         <div class="footer-container">
             <div class="footer-col">
                 <h3>CityBus Tracker</h3>
@@ -629,13 +745,20 @@
     </div>
 </footer>
 
+<!-- Fixed floating action button (scroll to top) -->
+<button class="fab-scroll-top" id="fab-scroll-top" aria-label="Back to top">
+    <i class="fas fa-arrow-up"></i>
+</button>
+
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<script src="roads.js"></script>
 <script src="script.js"></script>
 <script src="planner.js"></script>
 <script src="chatbot.js"></script>
 <script src="eta.js"></script>
+<script src="emerald.js"></script>
 <script src="motion.js"></script>
 <script type="module" src="landing3d.js"></script>
 </body>

@@ -7,6 +7,7 @@
 const ETA_FALLBACK_SPEED_KMH = 20;   // used until the bus reports real movement
 const ETA_MIN_LIVE_SPEED_KMH = 3;    // below this the bus is basically stopped
 let etaPolyline      = null;
+let etaCasing        = null;
 let activeEtaBusId   = null;
 let activeEtaRouteId = null;
 
@@ -91,7 +92,18 @@ function calculateAndShowETA(busId, routeId, busCoords) {
     }
 
     const userCoords = [userLocation.lat, userLocation.lng];
-    const path = route.path;
+
+    // Prefer the road-snapped geometry (dense, follows the road) so the
+    // highlighted bus→you path hugs the street. Falls back to raw waypoints
+    // until the snap resolves, then recomputes once so it upgrades in place.
+    const path = (route.roadGeom && route.roadGeom.length >= 2) ? route.roadGeom : route.path;
+    if (!route.roadGeom && typeof getRouteRoadGeom === 'function') {
+        getRouteRoadGeom(route).then(() => {
+            if (activeEtaBusId === busId && activeEtaRouteId === routeId) {
+                calculateAndShowETA(busId, routeId, busCoords);
+            }
+        });
+    }
 
     const busPos  = eta_routePos(busCoords,  path);
     const userPos = eta_routePos(userCoords, path);
@@ -126,16 +138,24 @@ function calculateAndShowETA(busId, routeId, busCoords) {
 function drawETAPolyline(points) {
     if (!trackingMap || points.length < 2) return;
     clearETAPolyline();
-    etaPolyline = L.polyline(points, {
-        color: '#f59e0b',
-        weight: 7,
-        opacity: 0.92,
-        lineJoin: 'round',
-        lineCap: 'round'
+    // White casing underneath makes the highlighted bus→you path pop off the
+    // route line; the mint core carries the "this is your ride" signal.
+    etaCasing = L.polyline(points, {
+        color: '#ffffff', weight: 11, opacity: 0.55,
+        lineJoin: 'round', lineCap: 'round'
     }).addTo(trackingMap);
+    etaPolyline = L.polyline(points, {
+        color: '#34d399', weight: 6, opacity: 0.95,
+        lineJoin: 'round', lineCap: 'round', className: 'eta-live-line'
+    }).addTo(trackingMap);
+    etaPolyline.bringToFront();
 }
 
 function clearETAPolyline() {
+    if (etaCasing && trackingMap) {
+        trackingMap.removeLayer(etaCasing);
+        etaCasing = null;
+    }
     if (etaPolyline && trackingMap) {
         trackingMap.removeLayer(etaPolyline);
         etaPolyline = null;

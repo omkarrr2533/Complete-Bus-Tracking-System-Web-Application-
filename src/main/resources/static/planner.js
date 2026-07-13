@@ -12,6 +12,12 @@
 
     const $ = id => document.getElementById(id);
 
+    // Road-snapped polyline with graceful fallback (see roads.js)
+    const snapLine = (map, pts, opts) =>
+        (typeof window.drawSnappedPolyline === 'function')
+            ? window.drawSnappedPolyline(map, pts, opts)
+            : L.polyline(pts, opts).addTo(map);
+
     // ── Setup ──────────────────────────────────────────────────────────
     function initPlannerMap() {
         if (plannerMap) { plannerMap.invalidateSize(); return; }
@@ -25,7 +31,8 @@
         loadBusRoutes().then(routes => {
             Object.values(routes).forEach(route => {
                 if (!route.active) return;
-                L.polyline(route.path, { color: route.color, weight: 2, opacity: 0.35 }).addTo(plannerMap);
+                snapLine(plannerMap, route.stops.map(s => s.coords),
+                    { color: route.color, weight: 2, opacity: 0.35 });
             });
         });
 
@@ -131,9 +138,16 @@
     }
 
     // ── Rendering ──────────────────────────────────────────────────────
+    function clockAfter(minutesFromNow) {
+        const t = new Date(Date.now() + minutesFromNow * 60000);
+        return t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
     function renderJourney(plan) {
         $('journey-result').style.display = 'block';
 
+        const leaveAt = clockAfter(0);
+        const arriveAt = clockAfter(plan.totalMinutes);
         $('journey-summary').innerHTML = `
             <div class="summary-cell">
                 <span class="summary-num">${Math.round(plan.totalMinutes)}</span>
@@ -149,14 +163,56 @@
                 <span class="summary-num">${plan.transfers}</span>
                 <span class="summary-lbl">transfer${plan.transfers === 1 ? '' : 's'}</span>
             </div>
+            <div class="summary-clock">
+                <i class="fas fa-clock"></i> Leave now <strong>${leaveAt}</strong>
+                <i class="fas fa-arrow-right-long"></i> arrive <strong>${arriveAt}</strong>
+            </div>
             <div class="summary-route">${escapeHtml(plan.summary)}</div>`;
 
-        $('journey-legs').innerHTML = plan.legs.map((leg, i) => legHtml(leg, i)).join('');
+        // Running clock so each leg shows a real board/arrive time
+        let elapsed = 0;
+        $('journey-legs').innerHTML = plan.legs.map((leg, i) => {
+            const html = legHtml(leg, i, plan.legs, elapsed);
+            elapsed += leg.durationMinutes;
+            return html;
+        }).join('');
         drawLegsOnMap(plan.legs);
     }
 
-    function legHtml(leg, index) {
+    // A WALK leg that sits between two RIDE legs is an interchange — the moment
+    // the rider must get off one bus and board another. Surface it loudly.
+    function isInterchange(legs, i) {
+        return legs[i].mode === 'WALK'
+            && legs[i - 1] && legs[i - 1].mode === 'RIDE'
+            && legs[i + 1] && legs[i + 1].mode === 'RIDE';
+    }
+
+    function legHtml(leg, index, legs, elapsed) {
         const duration = leg.durationMinutes < 1 ? '&lt;1' : Math.round(leg.durationMinutes);
+
+        if (leg.mode === 'WALK' && isInterchange(legs, index)) {
+            const off = legs[index - 1];   // ride you leave
+            const on = legs[index + 1];    // ride you board
+            const metres = (leg.distanceKm * 1000).toFixed(0);
+            return `
+            <div class="journey-leg leg-change" style="animation-delay:${index * 90}ms">
+                <div class="leg-icon change"><i class="fas fa-arrows-turn-to-dots"></i></div>
+                <div class="leg-body">
+                    <div class="leg-title leg-change-title">Change here — board a different bus</div>
+                    <div class="change-steps">
+                        <div class="change-step"><i class="fas fa-arrow-down-from-line"></i>
+                            Get off <span class="route-chip" style="--chip-color:${off.routeColor}">${off.routeNumber}</span>
+                            at <strong>${escapeHtml(leg.fromName)}</strong></div>
+                        <div class="change-step"><i class="fas fa-person-walking"></i>
+                            Walk ${metres} m to <strong>${escapeHtml(leg.toName)}</strong> (${duration} min)</div>
+                        <div class="change-step"><i class="fas fa-arrow-up-from-line"></i>
+                            Board <span class="route-chip" style="--chip-color:${on.routeColor}">${on.routeNumber}</span>
+                            ${escapeHtml(on.routeName || '')}</div>
+                    </div>
+                </div>
+            </div>`;
+        }
+
         if (leg.mode === 'WALK') {
             return `
             <div class="journey-leg leg-walk" style="animation-delay:${index * 90}ms">
@@ -167,16 +223,20 @@
                 </div>
             </div>`;
         }
+
+        const boardAt = clockAfter(elapsed + (leg.waitMinutes || 0));
         return `
         <div class="journey-leg leg-ride" style="animation-delay:${index * 90}ms">
             <div class="leg-icon ride" style="--leg-color:${leg.routeColor}"><i class="fas fa-bus-simple"></i></div>
             <div class="leg-body">
                 <div class="leg-title">
                     <span class="route-chip" style="--chip-color:${leg.routeColor}">${leg.routeNumber}</span>
-                    <strong>${escapeHtml(leg.fromName)}</strong> → <strong>${escapeHtml(leg.toName)}</strong>
+                    <strong>${escapeHtml(leg.fromName)}</strong>
+                    <i class="fas fa-arrow-right-long leg-arrow"></i>
+                    <strong>${escapeHtml(leg.toName)}</strong>
                 </div>
                 <div class="leg-meta">
-                    ${duration} min · ${leg.stopCount} stop${leg.stopCount === 1 ? '' : 's'} · ${leg.distanceKm.toFixed(1)} km
+                    Board ≈${boardAt} · ${duration} min · ${leg.stopCount} stop${leg.stopCount === 1 ? '' : 's'} · ${leg.distanceKm.toFixed(1)} km
                     ${leg.waitMinutes != null ? ` · wait ≈${Math.round(leg.waitMinutes)} min` : ''}
                 </div>
             </div>
@@ -189,12 +249,21 @@
         const bounds = [];
         legs.forEach(leg => {
             if (!leg.geometry || leg.geometry.length < 2) return;
-            const line = leg.mode === 'WALK'
-                ? L.polyline(leg.geometry, { color: '#64748b', weight: 4, opacity: 0.8, dashArray: '2 8', lineCap: 'round' })
-                : L.polyline(leg.geometry, { color: leg.routeColor || '#1d4ed8', weight: 6, opacity: 0.9, lineCap: 'round' });
-            line.addTo(plannerMap);
+            let line;
+            if (leg.mode === 'WALK') {
+                // Walks stay straight/dashed (short hops); no road snap needed
+                line = L.polyline(leg.geometry, { color: '#64748b', weight: 4, opacity: 0.8, dashArray: '2 8', lineCap: 'round' })
+                    .addTo(plannerMap);
+                leg.geometry.forEach(p => bounds.push(p));
+            } else {
+                // Ride legs hug the road — snapped through the route's stops
+                // (routing through the sparse backend path geometry detours badly)
+                const wp = rideLegWaypoints(leg);
+                line = snapLine(plannerMap, wp,
+                    { color: leg.routeColor || '#10b77f', weight: 6, opacity: 0.9, lineCap: 'round' });
+                wp.forEach(p => bounds.push(p));
+            }
             legLayers.push(line);
-            leg.geometry.forEach(p => bounds.push(p));
         });
         // Endpoint pins
         const first = legs[0]?.geometry?.[0];
@@ -212,6 +281,22 @@
             legLayers.push(marker);
         });
         if (bounds.length) plannerMap.fitBounds(bounds, { padding: [40, 40] });
+    }
+
+    // A ride leg's map geometry, built from the route's stops between the
+    // boarding and alighting stop (clean OSRM input) rather than the sparse
+    // backend path slice, which snaps to big detours.
+    function rideLegWaypoints(leg) {
+        const route = window.busRoutes && window.busRoutes[String(leg.routeNumber)];
+        if (!route || !route.stops) return leg.geometry;
+        const names = route.stops.map(s => s.name);
+        const i = names.indexOf(leg.fromName);
+        const j = names.indexOf(leg.toName);
+        if (i < 0 || j < 0) return leg.geometry;
+        const step = i <= j ? 1 : -1;
+        const pts = [];
+        for (let k = i; k !== j + step; k += step) pts.push(route.stops[k].coords);
+        return pts.length >= 2 ? pts : leg.geometry;
     }
 
     function clearLegLayers() {
