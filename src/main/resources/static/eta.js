@@ -131,6 +131,11 @@ function calculateAndShowETA(busId, routeId, busCoords) {
     showETAPanel(busId, route.name, distKm, etaMins,
         measured ? 'Live GPS speed' : 'Estimated speed');
     setETASpeed(speed);
+
+    // Rider-assist hooks (assist.js): share needs the latest ETA context,
+    // and the "Alert me" watcher fires once the bus is close enough.
+    window.lastEtaInfo = { busId, routeName: route.name, distKm, etaMins };
+    if (window.etaNotify) window.etaNotify.check(busId, etaMins);
 }
 
 /* ─── Map layer ─────────────────────────────────────────────── */
@@ -209,6 +214,8 @@ function hideETAPanel() {
     clearETAPolyline();
     activeEtaBusId   = null;
     activeEtaRouteId = null;
+    window.lastEtaInfo = null;
+    if (window.etaNotify) window.etaNotify.disarm(true);
 }
 
 /* ─── Integration hooks (called from script.js) ─────────────── */

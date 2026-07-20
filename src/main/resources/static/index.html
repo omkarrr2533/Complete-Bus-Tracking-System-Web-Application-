@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script type="importmap">
     {
         "imports": {
@@ -68,6 +68,9 @@
                 <button id="logout-btn" class="logout-btn" style="display: none;">Logout</button>
             </div>
         </div>
+        <button class="dark-mode-toggle helpline-btn" id="helpline-btn" aria-label="Emergency helplines" title="Emergency helplines">
+            <i class="fas fa-phone-volume"></i>
+        </button>
         <button class="dark-mode-toggle" id="dark-mode-toggle" aria-label="Toggle dark mode">
             <i class="fas fa-moon" id="theme-icon"></i>
         </button>
@@ -144,6 +147,9 @@
 
         <!-- Nearest route (auto-assigned from the rider's location on load) -->
         <div id="nearest-route" class="nearest-route" style="display:none;"></div>
+
+        <!-- Saved (favorite) routes with live next-departure countdowns -->
+        <div id="fav-strip" class="fav-strip" style="display:none;" aria-label="Your saved routes"></div>
 
         <!-- Horizontal animated stats strip -->
         <div class="stats-strip reveal-up">
@@ -346,6 +352,16 @@
         <!-- Occupancy row -->
         <div class="eta-occupancy-row" id="eta-occupancy-row" style="display:none;">
             <span class="occupancy-badge" id="eta-occupancy-badge"></span>
+        </div>
+
+        <!-- Rider actions: arrival alert + share trip -->
+        <div class="eta-actions-row">
+            <button class="eta-mini-btn" id="eta-notify-btn" title="Get a notification shortly before the bus arrives">
+                <i class="far fa-bell"></i> <span id="eta-notify-label">Alert me</span>
+            </button>
+            <button class="eta-mini-btn" id="eta-share-btn" title="Share this bus and ETA with someone">
+                <i class="fas fa-share-nodes"></i> Share trip
+            </button>
         </div>
 
         <!-- Footer row: clock + status -->
@@ -685,6 +701,45 @@
     </section>
 </main>
 
+<!-- Emergency & helpline modal -->
+<div class="modal-overlay" id="helpline-modal" role="dialog" aria-modal="true" aria-labelledby="helpline-title">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="helpline-title"><i class="fas fa-phone-volume"></i> Emergency &amp; Helplines</h3>
+            <button class="modal-close" id="helpline-close" aria-label="Close helplines"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <p class="helpline-note">Tap a number to call. In immediate danger, always call <strong>112</strong> first.</p>
+            <div class="helpline-list">
+                <a class="helpline-item danger" href="tel:112">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    <span><strong>112</strong><small>National emergency (all services)</small></span>
+                </a>
+                <a class="helpline-item" href="tel:100">
+                    <i class="fas fa-shield-halved"></i>
+                    <span><strong>100</strong><small>Police</small></span>
+                </a>
+                <a class="helpline-item" href="tel:108">
+                    <i class="fas fa-truck-medical"></i>
+                    <span><strong>108</strong><small>Ambulance</small></span>
+                </a>
+                <a class="helpline-item" href="tel:1091">
+                    <i class="fas fa-person-dress"></i>
+                    <span><strong>1091</strong><small>Women's helpline</small></span>
+                </a>
+                <a class="helpline-item" href="tel:1098">
+                    <i class="fas fa-child"></i>
+                    <span><strong>1098</strong><small>Child helpline</small></span>
+                </a>
+                <a class="helpline-item" href="tel:+912401234567">
+                    <i class="fas fa-bus"></i>
+                    <span><strong>+91 240-1234567</strong><small>CityBus 24/7 support</small></span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Footer -->
 <footer>
     <div class="container">
@@ -758,6 +813,7 @@
 <script src="planner.js"></script>
 <script src="chatbot.js"></script>
 <script src="eta.js"></script>
+<script src="assist.js"></script>
 <script src="emerald.js"></script>
 <script src="motion.js"></script>
 <script type="module" src="landing3d.js"></script>

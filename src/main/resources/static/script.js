@@ -407,7 +407,9 @@ function initHomeMap() {
                         iconSize: [14, 14],
                         iconAnchor: [7, 7]
                     })
-                }).addTo(homeMap).bindPopup(`<strong>${escapeHtml(s.name)}</strong><br><small>${escapeHtml(route.name)}</small>`);
+                }).addTo(homeMap).bindPopup(() =>
+                    `<strong>${escapeHtml(s.name)}</strong><br><small>${escapeHtml(route.name)}</small>` +
+                    (typeof nextDeparturesHtml === 'function' ? nextDeparturesHtml(route) : ''));
             });
         });
     });
@@ -496,7 +498,12 @@ async function generateBusList() {
         card.className = 'bus-card';
         card.setAttribute('data-bus-id', bus.code);
         card.setAttribute('data-route-id', routeId ?? '');
+        const faved = routeId && typeof isFavRoute === 'function' && isFavRoute(routeId);
         card.innerHTML = `
+            ${routeId ? `<button class="fav-btn ${faved ? 'active' : ''}" data-route="${routeId}"
+                    aria-label="${faved ? 'Remove route from saved' : 'Save this route'}" title="Save route to your home page">
+                <i class="${faved ? 'fas' : 'far'} fa-star"></i>
+            </button>` : ''}
             <div class="bus-number">${escapeHtml(bus.code.toUpperCase())}</div>
             <div class="bus-route">Route ${bus.routeNumber ?? '—'} — ${escapeHtml(bus.routeName ?? 'Unassigned')}</div>
             <div class="bus-status ${online ? 'status-active' : 'status-offline'}">
@@ -505,11 +512,19 @@ async function generateBusList() {
             <div class="bus-occupancy">${online ? occupancyBadgeHtml(bus.live.occupancy) : ''}</div>
             <div class="bus-next-stop">${online && bus.live.speedKmh != null
                 ? `Moving at ${bus.live.speedKmh} km/h`
-                : `Every ${busFrequency(routeId)} min from ${busFirstBus(routeId)}`}</div>
+                : (typeof nextDepartureLabel === 'function' && routeId
+                    ? nextDepartureLabel(routeId)
+                    : `Every ${busFrequency(routeId)} min from ${busFirstBus(routeId)}`)}</div>
             <button class="track-bus-btn" data-bus-id="${bus.code}" data-route-id="${routeId ?? ''}">
                 <i class="fas fa-map-marker-alt"></i> Track This Bus
             </button>`;
         list.appendChild(card);
+
+        const favBtn = card.querySelector('.fav-btn');
+        if (favBtn) favBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            if (typeof toggleFavRoute === 'function') toggleFavRoute(routeId, favBtn);
+        });
 
         if (online && bus.live.speedKmh != null) {
             window.liveBusSpeeds[bus.code] = bus.live.speedKmh;
@@ -589,7 +604,9 @@ function showRoute(routeId) {
             icon: terminal ? terminalIcon(terminal, route.color) : stopDotIcon(route.color),
             zIndexOffset: terminal ? 1000 : 0
         }).addTo(trackingMap)
-          .bindPopup(`<strong>${terminal === 'start' ? '🚩 Start · ' : terminal === 'end' ? '🏁 Terminus · ' : 'Stop ' + (i + 1) + ': '}${escapeHtml(stop.name)}</strong><br><small>${escapeHtml(route.name)}</small>`);
+          .bindPopup(() =>
+              `<strong>${terminal === 'start' ? '🚩 Start · ' : terminal === 'end' ? '🏁 Terminus · ' : 'Stop ' + (i + 1) + ': '}${escapeHtml(stop.name)}</strong><br><small>${escapeHtml(route.name)}</small>` +
+              (typeof nextDeparturesHtml === 'function' ? nextDeparturesHtml(route) : ''));
         routeLayers[routeId].stops.push(m);
     });
 
