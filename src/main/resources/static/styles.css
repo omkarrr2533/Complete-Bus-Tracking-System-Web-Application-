@@ -3456,6 +3456,186 @@ footer {
 .nr-meta strong { color: var(--text); }
 .nr-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
 
+/* ── Saved (favorite) routes strip ── */
+.fav-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+.fav-strip-head { flex-basis: 100%; }
+.fav-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.8rem;
+    border-radius: 999px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: var(--transition);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+.fav-chip:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(16,183,127,0.18);
+}
+.fav-name { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+.fav-next {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--mint);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    white-space: nowrap;
+}
+.fav-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0.15rem 0.25rem;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    transition: var(--transition);
+}
+.fav-remove:hover { color: var(--danger); }
+
+/* Star button on bus cards */
+.fav-btn {
+    position: absolute;
+    top: 0.9rem;
+    right: 0.9rem;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    cursor: pointer;
+    padding: 0.3rem;
+    border-radius: 50%;
+    transition: var(--transition);
+    z-index: 2;
+}
+.fav-btn:hover { color: var(--mint); transform: scale(1.15); }
+.fav-btn.active { color: var(--mint); text-shadow: 0 0 12px rgba(52,211,153,0.6); }
+
+/* ── ETA panel rider actions ── */
+.eta-actions-row {
+    display: flex;
+    gap: 0.5rem;
+    padding-top: 0.1rem;
+}
+.eta-mini-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 0.76rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+}
+.eta-mini-btn:hover { color: var(--primary); border-color: var(--primary); background: var(--primary-light); }
+.eta-mini-btn.armed {
+    color: var(--primary-ink);
+    background: linear-gradient(135deg, var(--primary), var(--mint));
+    border-color: transparent;
+    box-shadow: 0 4px 14px rgba(52,211,153,0.35);
+}
+
+/* ── Journey extras: fare, CO₂, share ── */
+.journey-extras {
+    flex-basis: 100%;
+    order: 4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-top: 0.6rem;
+}
+.extra-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: var(--primary-light);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.01em;
+}
+.extra-chip i { color: var(--mint); font-size: 0.75rem; }
+button.extra-share {
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-secondary);
+    transition: var(--transition);
+    font-family: var(--font-body);
+    font-weight: 600;
+}
+button.extra-share:hover { color: var(--primary); border-color: var(--primary); }
+
+/* ── Stop popup: next departures line ── */
+.popup-deps {
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px dashed rgba(120,140,130,0.35);
+    font-size: 0.74rem;
+    color: #0f9e6e;
+    white-space: nowrap;
+}
+.popup-deps i { margin-right: 0.25rem; font-size: 0.68rem; }
+.popup-deps b { font-weight: 700; }
+
+/* ── Helpline ── */
+.helpline-btn { color: var(--danger); }
+.helpline-btn:hover { color: var(--danger); border-color: var(--danger); background: rgba(220,38,38,0.08); }
+.helpline-note {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+.helpline-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.helpline-item {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.7rem 0.9rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    text-decoration: none;
+    transition: var(--transition);
+}
+.helpline-item:hover { border-color: var(--border-strong); background: var(--bg-hover); transform: translateX(3px); }
+.helpline-item i {
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 10px;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 0.95rem;
+    flex-shrink: 0;
+}
+.helpline-item.danger i { background: rgba(220,38,38,0.12); color: var(--danger); }
+.helpline-item span { display: flex; flex-direction: column; line-height: 1.3; }
+.helpline-item strong { font-family: var(--font-mono); font-size: 0.95rem; }
+.helpline-item small { color: var(--text-muted); font-size: 0.75rem; }
+
 /* ── Journey: clock line + interchange (transfer) card ── */
 .summary-clock {
     flex-basis: 100%;

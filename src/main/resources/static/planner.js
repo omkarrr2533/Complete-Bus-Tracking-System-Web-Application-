@@ -167,7 +167,10 @@
                 <i class="fas fa-clock"></i> Leave now <strong>${leaveAt}</strong>
                 <i class="fas fa-arrow-right-long"></i> arrive <strong>${arriveAt}</strong>
             </div>
-            <div class="summary-route">${escapeHtml(plan.summary)}</div>`;
+            <div class="summary-route">${escapeHtml(plan.summary)}</div>
+            ${journeyExtrasHtml(plan)}`;
+
+        wireJourneyExtras(plan, leaveAt, arriveAt);
 
         // Running clock so each leg shows a real board/arrive time
         let elapsed = 0;
@@ -177,6 +180,38 @@
             return html;
         }).join('');
         drawLegsOnMap(plan.legs);
+    }
+
+    // Estimated fare + CO₂ saved + share button under the summary (assist.js).
+    function journeyExtrasHtml(plan) {
+        if (typeof window.estimateFare !== 'function') return '';
+        const rideKm = plan.legs.filter(l => l.mode === 'RIDE')
+            .reduce((sum, l) => sum + l.distanceKm, 0);
+        if (rideKm <= 0) return '';
+        const fare = window.estimateFare(rideKm);
+        const co2 = window.co2SavedKg(rideKm);
+        return `
+            <div class="journey-extras">
+                <span class="extra-chip" title="Estimated city-bus fare (₹10 first 2 km, ₹2/km after)">
+                    <i class="fas fa-indian-rupee-sign"></i> ≈₹${fare} est. fare</span>
+                <span class="extra-chip" title="Estimated CO₂ saved vs driving the same distance">
+                    <i class="fas fa-leaf"></i> ${co2 < 1 ? Math.round(co2 * 1000) + ' g' : co2.toFixed(1) + ' kg'} CO₂ saved</span>
+                <button class="extra-chip extra-share" id="journey-share-btn" title="Share this plan">
+                    <i class="fas fa-share-nodes"></i> Share plan</button>
+            </div>`;
+    }
+
+    function wireJourneyExtras(plan, leaveAt, arriveAt) {
+        const btn = $('journey-share-btn');
+        if (!btn || typeof window.shareTrip !== 'function') return;
+        btn.addEventListener('click', () => {
+            const from = plan.legs[0]?.fromName ?? 'origin';
+            const to = plan.legs[plan.legs.length - 1]?.toName ?? 'destination';
+            window.shareTrip(
+                `CityBus plan: ${from} → ${to} — ${Math.round(plan.totalMinutes)} min, ` +
+                `${plan.transfers} transfer${plan.transfers === 1 ? '' : 's'} (${plan.summary}). ` +
+                `Leave ${leaveAt}, arrive ${arriveAt}. Live map: ${location.origin}`);
+        });
     }
 
     // A WALK leg that sits between two RIDE legs is an interchange — the moment

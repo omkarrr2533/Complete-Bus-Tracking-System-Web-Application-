@@ -1,12 +1,16 @@
 // CityBus Tracker service worker.
 // Network-first for app code (HTML/JS/CSS) so deployments reach users
 // immediately; the cache only serves as an offline fallback.
-const CACHE_NAME = 'citybus-v2';
+const CACHE_NAME = 'citybus-v3';
 const PRECACHE = [
   '/',
   '/styles.css',
   '/script.js',
   '/eta.js',
+  '/assist.js',
+  '/roads.js',
+  '/planner.js',
+  '/emerald.js',
   '/chatbot.js',
   '/animation.js'
 ];
